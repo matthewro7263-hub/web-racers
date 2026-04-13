@@ -1909,19 +1909,20 @@
                 this.musicVolumeNode.volume.cancelScheduledValues(Tone.now());
                 this.musicVolumeNode.volume.value = 0; // 0 dB
 
-                if (this.currentTrack === trackName) return;
+                if (this.currentTrack === trackName) {
+                    // Already playing — clear any stray interval that shouldn't be running
+                    if (this.musicInterval) { clearInterval(this.musicInterval); this.musicInterval = null; }
+                    return;
+                }
                 this.stopMusic();
                 this.currentTrack = trackName;
-                
+
                 if (trackName === 'menu' && this.menuAudioElement) {
                     this.menuAudioElement.currentTime = 0;
                     this.menuAudioElement.volume = this.muted ? 0 : 0.6;
                     this.menuAudioElement.play().catch(e => {
                         console.log("Menu audio play prevented/missing:", e);
-                        // Fallback to procedural music
-                        this.currentBeat = 0;
-                        this.nextNoteTime = Tone.now() + 0.1;
-                        this.musicInterval = setInterval(() => this.scheduleMusic(), 50);
+                        // Fail silently — no procedural fallback to avoid interval overlap
                     });
                     return;
                 }
@@ -1940,10 +1941,7 @@
                     this.phxAudioElement.volume = this.muted ? 0 : 0.6;
                     this.phxAudioElement.play().catch(e => {
                         console.log("PHX audio play prevented/missing:", e);
-                        // Fallback to procedural music
-                        this.currentBeat = 0;
-                        this.nextNoteTime = Tone.now() + 0.1;
-                        this.musicInterval = setInterval(() => this.scheduleMusic(), 50);
+                        // Fail silently — no procedural fallback to avoid interval overlap
                     });
                     return;
                 }
@@ -2008,6 +2006,12 @@
                 if (this.musicInterval) {
                     clearInterval(this.musicInterval);
                     this.musicInterval = null;
+                }
+                // Release any pre-scheduled Tone.js notes to prevent audible bleed-through
+                if (this.synths) {
+                    Object.values(this.synths).forEach(s => {
+                        try { if (s && s.releaseAll) s.releaseAll(); } catch(e) {}
+                    });
                 }
                 if (this.menuAudioElement) {
                     this.menuAudioElement.pause();
