@@ -1093,7 +1093,9 @@
                 playersList.innerHTML = '';
                 snapshot.forEach(docSnap => {
                     const p = docSnap.data();
-                    playersList.innerHTML += `<div>${p.name} ${p.uid === auth.currentUser.uid ? '(YOU)' : ''}</div>`;
+                    const div = document.createElement('div');
+                    div.textContent = p.name + (p.uid === auth.currentUser.uid ? ' (YOU)' : '');
+                    playersList.appendChild(div);
                 });
             }, err => handleFirestoreError(err, OperationType.LIST, `sessions/${sessionId}/players`));
             
@@ -1433,7 +1435,7 @@
                     brassSection: new Tone.PolySynth(Tone.Synth, {
                         oscillator: { type: "sawtooth" },
                         envelope: { attack: 0.05, decay: 0.2, sustain: 0.8, release: 0.5 }
-                    }).connect(this.musicVolumeNode),
+                    }),
                     
                     orchestraHit: new Tone.PolySynth(Tone.Synth, {
                         oscillator: { type: "fmsquare" },
@@ -2373,7 +2375,8 @@
                 this.distanceDriven = 0; 
                 this.finished = false;
                 this.isOffRoad = false;
-                this.offTrackTimer = 0; 
+                this.onTrack = true;
+                this.offTrackTimer = 0;
                 
                 this.aiTargetWaypoint = 1;
                 this.aiError = (Math.random() - 0.5) * (config.difficulty === 'Hard' ? 20 : 60); 
@@ -2423,6 +2426,11 @@
                     let ease = 1 - Math.pow(1 - t, 3); // ease out cubic
                     this.x = this.teleportStartX + (this.teleportEndX - this.teleportStartX) * ease;
                     this.y = this.teleportStartY + (this.teleportEndY - this.teleportStartY) * ease;
+                    if (this.teleportTimer === 0) {
+                        this.isOffRoad = false;
+                        this.onTrack = true;
+                        this.stuckFrames = 0;
+                    }
                 } else {
                     if (gameState === 'PLAYING' || this.finished) {
 
@@ -2500,19 +2508,21 @@
                         }
 
                         // Car-to-Car Collisions (All cars)
+                        let wasCollisionPushed = false;
                         cars.forEach(other => {
                             if (other !== this) {
                                 let dx = this.x - other.x;
                                 let dy = this.y - other.y;
                                 let distSq = dx*dx + dy*dy;
-                                if (distSq > 0 && distSq < 900) { 
+                                if (distSq > 0 && distSq < 900) {
                                     let dist = Math.sqrt(distSq);
                                     let overlap = 30 - dist;
-                                    
-                                    // Push apart (only move self to avoid double-pushing)
-                                    this.x += (dx / dist) * overlap * 0.5;
-                                    this.y += (dy / dist) * overlap * 0.5;
-                                    
+
+                                    // Push apart (reduced factor to limit double-push)
+                                    this.x += (dx / dist) * overlap * 0.3;
+                                    this.y += (dy / dist) * overlap * 0.3;
+                                    wasCollisionPushed = true;
+
                                     // Sparks
                                     if (Math.abs(this.speed - other.speed) > 2 || Math.abs(this.speed) > 5) {
                                         if (Math.random() < 0.3) {
@@ -2525,6 +2535,30 @@
                                 }
                             }
                         });
+
+                        // Post-collision boundary clamp: prevent push through walls
+                        if (wasCollisionPushed && activeWaypoints.length > 0) {
+                            let seg = this.currentSegment || 0;
+                            let outerWallDist = config.trackWidth / 2 + 150;
+                            let bestDistSq = Infinity;
+                            let bestPt = null;
+                            for (let offset = -1; offset <= 1; offset++) {
+                                let idx = (seg + offset + activeWaypoints.length) % activeWaypoints.length;
+                                let a = activeWaypoints[idx], b = activeWaypoints[(idx + 1) % activeWaypoints.length];
+                                let l2 = dist2(a, b);
+                                let t = Math.max(0, Math.min(1, ((this.x - a.x) * (b.x - a.x) + (this.y - a.y) * (b.y - a.y)) / (l2 || 1)));
+                                let pt = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+                                let d2 = dist2(this, pt);
+                                if (d2 < bestDistSq) { bestDistSq = d2; bestPt = pt; }
+                            }
+                            if (bestPt && bestDistSq > outerWallDist * outerWallDist) {
+                                let d = Math.sqrt(bestDistSq);
+                                let nx = (this.x - bestPt.x) / d;
+                                let ny = (this.y - bestPt.y) / d;
+                                this.x = bestPt.x + nx * (outerWallDist - 1);
+                                this.y = bestPt.y + ny * (outerWallDist - 1);
+                            }
+                        }
                     }
 
                     this.applyFrictionAndMovement();
@@ -2548,33 +2582,29 @@
                         } else if (Math.abs(this.speed) < 2.0 || moveDistSq < 1.0) {
                             this.stuckFrames++;
                             if (this.stuckFrames > 120 && this.teleportCooldown <= 0) { // Stuck for 2 full seconds
-                                let nextWP = activeWaypoints[this.aiTargetWaypoint];
-                                let angleToTarget = Math.atan2(nextWP.y - this.y, nextWP.x - this.x);
-                                
-                                // Find nearest track center to pull away from walls
-                                let nearestDistSq = Infinity;
-                                let centerPt = null;
+                                // Find nearest waypoint by direct distance
+                                let closestIdx = 0;
+                                let closestDistSq = Infinity;
                                 for (let i = 0; i < activeWaypoints.length; i++) {
-                                    let a = activeWaypoints[i], b = activeWaypoints[(i + 1) % activeWaypoints.length];
-                                    let l2 = dist2(a, b);
-                                    let t = Math.max(0, Math.min(1, ((this.x - a.x) * (b.x - a.x) + (this.y - a.y) * (b.y - a.y)) / (l2 || 1)));
-                                    let pt = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
-                                    let d2 = dist2(this, pt);
-                                    if (d2 < nearestDistSq) { nearestDistSq = d2; centerPt = pt; }
+                                    let d2 = dist2(this, activeWaypoints[i]);
+                                    if (d2 < closestDistSq) { closestDistSq = d2; closestIdx = i; }
                                 }
 
-                                let pullX = centerPt ? (centerPt.x - this.x) : 0;
-                                let pullY = centerPt ? (centerPt.y - this.y) : 0;
-                                
+                                let targetWP = activeWaypoints[closestIdx];
+                                let nextIdx = (closestIdx + 1) % activeWaypoints.length;
+                                let nextWP = activeWaypoints[nextIdx];
+
                                 this.teleportStartX = this.x;
                                 this.teleportStartY = this.y;
-                                this.teleportEndX = this.x + pullX;
-                                this.teleportEndY = this.y + pullY;
-                                this.teleportTimer = 18; 
-                                this.teleportCooldown = 180; 
-                                
-                                this.angle = angleToTarget;
-                                this.speed = this.maxSpeed * 0.8;
+                                this.teleportEndX = targetWP.x;
+                                this.teleportEndY = targetWP.y;
+                                this.teleportTimer = 18;
+                                this.teleportCooldown = 180;
+
+                                // Sync waypoint index and aim forward
+                                this.aiTargetWaypoint = nextIdx;
+                                this.angle = Math.atan2(nextWP.y - targetWP.y, nextWP.x - targetWP.x);
+                                this.speed = this.maxSpeed * 0.5;
                                 this.stuckFrames = 0;
                             }
                         } else {
@@ -2717,10 +2747,10 @@
 
                 // Waypoint Lookahead: Blend towards the next waypoint if getting close
                 let distToTarget = Math.sqrt(dist2(this, targetWP));
-                let lookaheadDist = 200 + (this.speed * 15);
+                let lookaheadDist = 200 + (this.speed * 8);
 
                 if (distToTarget < lookaheadDist) {
-                    let blendFactor = 1.0 - (distToTarget / lookaheadDist);
+                    let blendFactor = Math.min(1.0 - (distToTarget / lookaheadDist), 0.6);
                     tx = targetWP.x + (nextWP.x - targetWP.x) * blendFactor;
                     ty = targetWP.y + (nextWP.y - targetWP.y) * blendFactor;
                 }
@@ -2792,7 +2822,19 @@
                     this.angle += angleDiff > 0 ? turnAmt : -turnAmt;
                 }
 
-                if (Math.sqrt(dist2(this, targetWP)) < config.trackWidth * 1.5) {
+                // Advance waypoint: distance threshold OR passed-by detection
+                let wpDistSq = dist2(this, targetWP);
+                let closeEnough = Math.sqrt(wpDistSq) < config.trackWidth * 1.5;
+                let passedBy = false;
+                if (!closeEnough) {
+                    // Dot product: if vector car->waypoint points backward relative to track direction, we passed it
+                    let trackDx = nextWP.x - targetWP.x;
+                    let trackDy = nextWP.y - targetWP.y;
+                    let toWpDx = targetWP.x - this.x;
+                    let toWpDy = targetWP.y - this.y;
+                    passedBy = (toWpDx * trackDx + toWpDy * trackDy) < 0;
+                }
+                if (closeEnough || passedBy) {
                     this.aiTargetWaypoint = (this.aiTargetWaypoint + 1) % activeWaypoints.length;
                     this.aiError = (Math.random() - 0.5) * (config.trackWidth * 0.4);
                 }
@@ -4188,15 +4230,18 @@
                 posVal.textContent = suffixes[playerIndex] || (playerIndex + 1) + "th";
                 posVal.style.color = playerIndex === 0 ? "var(--neon-yellow)" : "white";
                 
-                let listHtml = '';
+                let posListEl = document.getElementById('position-list');
+                posListEl.innerHTML = '';
                 racePositions.forEach((c, i) => {
                     let pClass = c.isPlayer ? 'pos-you' : (c.tier && c.tier.name === 'RIVAL' ? 'pos-rival' : 'pos-normal');
                     let name = c.isPlayer ? 'YOU' : c.id;
                     if (spectateTarget !== -1 && cars[spectateTarget] === c) name += ' (SPECTATING)';
-                    let flag = (finishOrder.indexOf(c) !== -1) ? ' 🏁' : '';
-                    listHtml += `<div class="pos-item ${pClass}">${i+1}. ${name}${flag}</div>`;
+                    let flag = (finishOrder.indexOf(c) !== -1) ? ' \u{1F3C1}' : '';
+                    let div = document.createElement('div');
+                    div.className = `pos-item ${pClass}`;
+                    div.textContent = `${i+1}. ${name}${flag}`;
+                    posListEl.appendChild(div);
                 });
-                document.getElementById('position-list').innerHTML = listHtml;
 
                 const offroadWarning = document.getElementById('offroad-warning');
                 if (player.isOffRoad) {
@@ -4467,20 +4512,25 @@
 
                             let drx = Math.cos(angleRad);
                             let dry = Math.sin(angleRad);
+                            // Batched weather particle rendering (3 alpha buckets)
                             ctx.lineCap = 'round';
-                            ctx.beginPath();
-                            for (let i = 0; i < numParticles; i++) {
-                                let length = isSnow ? (2 + Math.random() * 3) : (10 + Math.random() * 15);
-                                if (config.weather === 'Hurricane') length *= 1.5;
-                                let alpha = isSnow ? (0.5 + Math.random() * 0.5) : (0.3 + Math.random() * 0.5);
-                                ctx.strokeStyle = isSnow ? `rgba(255, 255, 255, ${alpha})` : `rgba(200, 220, 255, ${alpha})`;
-                                ctx.lineWidth = isSnow ? (2 + Math.random() * 2) : (1 + Math.random() * 1.5);
-                                let rx = Math.random() * canvas.width;
-                                let ry = Math.random() * canvas.height;
-                                ctx.moveTo(rx, ry);
-                                ctx.lineTo(rx + drx * length, ry + dry * length);
-                                ctx.stroke();
+                            let baseColor = isSnow ? '255, 255, 255' : '200, 220, 255';
+                            let baseWidth = isSnow ? 3 : 1.75;
+                            let alphas = [0.35, 0.55, 0.75];
+                            let perBucket = Math.ceil(numParticles / 3);
+                            for (let b = 0; b < 3; b++) {
+                                ctx.strokeStyle = `rgba(${baseColor}, ${alphas[b]})`;
+                                ctx.lineWidth = baseWidth + b * 0.3;
                                 ctx.beginPath();
+                                for (let i = 0; i < perBucket; i++) {
+                                    let length = isSnow ? (2 + Math.random() * 3) : (10 + Math.random() * 15);
+                                    if (config.weather === 'Hurricane') length *= 1.5;
+                                    let rx = Math.random() * canvas.width;
+                                    let ry = Math.random() * canvas.height;
+                                    ctx.moveTo(rx, ry);
+                                    ctx.lineTo(rx + drx * length, ry + dry * length);
+                                }
+                                ctx.stroke();
                             }
                         }
                     }
