@@ -689,6 +689,7 @@
 
         <div id="race-stats" class="hud-box">
             <div class="stat-row">LAP: <span id="lap-val" class="stat-val">1 / 3</span></div>
+            <div class="stat-row">COINS: <span id="coin-val" class="stat-val">0</span> / 10</div>
             <div class="stat-row">TIME: <span id="time-val" class="stat-val">00:00.00</span></div>
             <div class="stat-row">BEST: <span id="best-lap-val" class="stat-val">--:--.--</span></div>
             <div class="stat-row">POS: <span id="pos-val" class="stat-val">1st</span></div>
@@ -758,11 +759,12 @@
             </div>
 
             <div class="menu-buttons">
-                <button class="menu-btn primary" onclick="openQuickRace()">Quick Race</button>
-                <button class="menu-btn" onclick="openKnockoutCup()">Knockout Cup</button>
-                <button class="menu-btn" onclick="openMultiplayerMenu()">Multiplayer</button>
-                <button class="menu-btn" onclick="openMusicPlayer()">Music Player</button>
-                <button class="menu-btn secondary" onclick="openSettings()">Settings</button>
+                <button class="menu-btn primary" data-onclick="openQuickRace()">Quick Race</button>
+                <button class="menu-btn" data-onclick="openKnockoutCup()">Knockout Cup</button>
+                <button class="menu-btn" data-onclick="openMultiplayerMenu()">Multiplayer</button>
+                <button class="menu-btn" data-onclick="openMusicPlayer()">Music Player</button>
+                <button class="menu-btn primary" data-onclick="openUpgradeShop()" style="background: rgba(0, 243, 255, 0.2); border-color: #00f3ff; color: #00f3ff;">Garage Shop</button>
+                <button class="menu-btn secondary" data-onclick="openSettings()">Settings</button>
             </div>
 
             <div class="menu-version">v1.0</div>
@@ -773,21 +775,21 @@
             <h2 style="color: var(--neon-blue); font-size: 32px; margin-top:0;">MULTIPLAYER</h2>
             
             <div id="multiplayer-auth-section" style="margin-bottom: 20px;">
-                <button id="login-btn" class="btn-neon" onclick="loginWithGoogle()">Login with Google to Play Online</button>
+                <button id="login-btn" class="btn-neon" data-onclick="loginWithGoogle()">Login with Google to Play Online</button>
                 <div id="user-info" class="hidden" style="color: var(--neon-yellow); font-family: 'Orbitron'; margin-bottom: 10px;">
                     Logged in as: <span id="user-display-name">---</span>
                 </div>
             </div>
 
             <div id="multiplayer-actions" class="hidden" style="display: flex; flex-direction: column; gap: 20px; width: 300px; margin: 0 auto;">
-                <button class="btn-neon" onclick="hostGame()">Host Game</button>
+                <button class="btn-neon" data-onclick="hostGame()">Host Game</button>
                 <div style="display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--neon-blue); padding: 15px; border-radius: 10px;">
                     <input type="text" id="join-code-input" placeholder="ENTER CODE" style="background: rgba(0,0,0,0.5); border: 1px solid var(--neon-blue); color: white; padding: 10px; text-align: center; font-family: 'Orbitron'; font-size: 18px;">
-                    <button class="btn-neon" onclick="joinGame()">Join Game</button>
+                    <button class="btn-neon" data-onclick="joinGame()">Join Game</button>
                 </div>
                 <div id="multiplayer-status" style="color: var(--neon-pink); font-size: 14px; min-height: 20px;"></div>
             </div>
-            <button class="btn-neon pink" style="margin-top: 20px;" onclick="openMainMenu()">Back</button>
+            <button class="btn-neon pink" style="margin-top: 20px;" data-onclick="openMainMenu()">Back</button>
         </div>
 
         <!-- LOBBY MENU -->
@@ -797,31 +799,63 @@
                 <!-- Players list -->
             </div>
             <div id="lobby-host-controls" class="hidden">
-                <button class="btn-neon" onclick="startMultiplayerGame()">Start Race</button>
+                <button class="btn-neon" data-onclick="startMultiplayerGame()">Start Race</button>
             </div>
             <div id="lobby-client-status" style="color: #aaa; margin-bottom: 20px;">Waiting for host...</div>
-            <button class="btn-neon pink" onclick="leaveLobby()">Leave Lobby</button>
+            <button class="btn-neon pink" data-onclick="leaveLobby()">Leave Lobby</button>
         </div>
 
         <!-- MUSIC PLAYER MENU -->
         <div id="music-player-menu" class="screen-panel hidden">
             <h2 style="color: var(--neon-blue); font-size: 32px; margin-top:0;">MUSIC PLAYER</h2>
             <div class="settings-group" style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 10px;">
-                <button class="btn-neon" onclick="audio.startMusic('menu')">The Final Turn (Menu)</button>
-                <button class="btn-neon" onclick="audio.startMusic('race_7')">PHX (Phoenix Sky Harbor)</button>
-                <button class="btn-neon" onclick="audio.startMusic('loading')">Loading OST</button>
-                <button class="btn-neon" onclick="audio.startMusic('race_0')">Procedural: Desert</button>
-                <button class="btn-neon" onclick="audio.startMusic('race_1')">Procedural: Mountain</button>
-                <button class="btn-neon" onclick="audio.startMusic('race_2')">Procedural: Seaside</button>
-                <button class="btn-neon" onclick="audio.startMusic('race_3')">Procedural: Technical</button>
-                <button class="btn-neon" onclick="audio.startMusic('race_4')">Procedural: City</button>
-                <button class="btn-neon" onclick="audio.startMusic('race_5')">Procedural: Snow</button>
-                <button class="btn-neon" onclick="audio.startMusic('race_6')">Procedural: Volcano</button>
-                <button class="btn-neon" onclick="audio.startMusic('race_8')">Procedural: Monaco</button>
-                <button class="btn-neon" onclick="audio.startMusic('race_9')">Procedural: Cyberpunk</button>
-                <button class="btn-neon pink" onclick="audio.stopMusic()">Stop Music</button>
+                <button class="btn-neon" data-onclick="audio.startMusic('menu')">The Final Turn (Menu)</button>
+                <button class="btn-neon" data-onclick="audio.startMusic('race_7')">PHX (Phoenix Sky Harbor)</button>
+                <button class="btn-neon" data-onclick="audio.startMusic('loading')">Loading OST</button>
+                <button class="btn-neon" data-onclick="audio.startMusic('race_0')">Procedural: Desert</button>
+                <button class="btn-neon" data-onclick="audio.startMusic('race_1')">Procedural: Mountain</button>
+                <button class="btn-neon" data-onclick="audio.startMusic('race_2')">Procedural: Seaside</button>
+                <button class="btn-neon" data-onclick="audio.startMusic('race_3')">Procedural: Technical</button>
+                <button class="btn-neon" data-onclick="audio.startMusic('race_4')">Procedural: City</button>
+                <button class="btn-neon" data-onclick="audio.startMusic('race_5')">Procedural: Snow</button>
+                <button class="btn-neon" data-onclick="audio.startMusic('race_6')">Procedural: Volcano</button>
+                <button class="btn-neon" data-onclick="audio.startMusic('race_8')">Procedural: Monaco</button>
+                <button class="btn-neon" data-onclick="audio.startMusic('race_9')">Procedural: Cyberpunk</button>
+                <button class="btn-neon pink" data-onclick="audio.stopMusic()">Stop Music</button>
             </div>
-            <button class="btn-neon pink" style="margin-top:30px;" onclick="openMainMenu()">Back</button>
+            <button class="btn-neon pink" style="margin-top:30px;" data-onclick="openMainMenu()">Back</button>
+        </div>
+
+        
+        <!-- UPGRADE SHOP -->
+        <div id="upgrade-shop-screen" class="screen-panel hidden">
+            <h2 style="color: var(--neon-pink); font-size: 32px; margin-top:0;">GARAGE SHOP</h2>
+            <div style="font-size: 24px; color: #ffcc00; margin-bottom: 20px;">Your Coins: $<span id="shop-coins">0</span></div>
+            
+            <div class="settings-group" style="text-align: left; max-width: 500px; margin: 0 auto; background: rgba(0,0,0,0.5); padding: 20px; border-radius: 10px; border: 1px solid #444;">
+                <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                    <span class="settings-label" style="width: 120px;">Top Speed</span>
+                    <div id="bars-speed"></div>
+                    <button id="buy-speed" class="btn-neon" data-onclick="buyUpgrade('speed')" style="padding: 5px 10px; font-size: 14px;">Upgrade</button>
+                </div>
+                <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                    <span class="settings-label" style="width: 120px;">Acceleration</span>
+                    <div id="bars-accel"></div>
+                    <button id="buy-accel" class="btn-neon" data-onclick="buyUpgrade('accel')" style="padding: 5px 10px; font-size: 14px;">Upgrade</button>
+                </div>
+                <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                    <span class="settings-label" style="width: 120px;">Handling</span>
+                    <div id="bars-handling"></div>
+                    <button id="buy-handling" class="btn-neon" data-onclick="buyUpgrade('handling')" style="padding: 5px 10px; font-size: 14px;">Upgrade</button>
+                </div>
+                <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                    <span class="settings-label" style="width: 120px;">Nitro Tank</span>
+                    <div id="bars-nitro"></div>
+                    <button id="buy-nitro" class="btn-neon" data-onclick="buyUpgrade('nitro')" style="padding: 5px 10px; font-size: 14px;">Upgrade</button>
+                </div>
+            </div>
+            
+            <button class="btn-neon pink" style="margin-top:30px;" data-onclick="openMainMenu()">Back to Menu</button>
         </div>
 
         <!-- SETTINGS MENU -->
@@ -831,34 +865,34 @@
             <div class="settings-group">
                 <span class="settings-label">Number of Laps</span>
                 <div class="settings-options" id="lap-options">
-                    <button class="btn-neon active" onclick="setLaps(3, this)">3</button>
-                    <button class="btn-neon" onclick="setLaps(5, this)">5</button>
-                    <button class="btn-neon" onclick="setLaps(10, this)">10</button>
+                    <button class="btn-neon active" data-onclick="setLaps(3, this)">3</button>
+                    <button class="btn-neon" data-onclick="setLaps(5, this)">5</button>
+                    <button class="btn-neon" data-onclick="setLaps(10, this)">10</button>
                 </div>
             </div>
 
             <div class="settings-group">
                 <span class="settings-label">AI Difficulty (Base)</span>
                 <div class="settings-options" id="diff-options">
-                    <button class="btn-neon" onclick="setDifficulty('Easy', this)">Easy</button>
-                    <button class="btn-neon active" onclick="setDifficulty('Normal', this)">Normal</button>
-                    <button class="btn-neon" onclick="setDifficulty('Hard', this)">Hard</button>
+                    <button class="btn-neon" data-onclick="setDifficulty('Easy', this)">Easy</button>
+                    <button class="btn-neon active" data-onclick="setDifficulty('Normal', this)">Normal</button>
+                    <button class="btn-neon" data-onclick="setDifficulty('Hard', this)">Hard</button>
                 </div>
             </div>
             
             <div class="settings-group">
                 <span class="settings-label">Weather</span>
                 <div class="settings-options" id="weather-options" style="flex-wrap: wrap; gap: 10px;">
-                    <button class="btn-neon active" onclick="setWeather('Clear', this)">Clear</button>
-                    <button class="btn-neon" onclick="setWeather('Rain', this)">Rain</button>
-                    <button class="btn-neon" onclick="setWeather('Storm', this)">Storm</button>
-                    <button class="btn-neon" onclick="setWeather('Snow', this)">Snow</button>
-                    <button class="btn-neon" onclick="setWeather('Blizzard', this)">Blizzard</button>
-                    <button class="btn-neon" onclick="setWeather('Hurricane', this)">Hurricane</button>
+                    <button class="btn-neon active" data-onclick="setWeather('Clear', this)">Clear</button>
+                    <button class="btn-neon" data-onclick="setWeather('Rain', this)">Rain</button>
+                    <button class="btn-neon" data-onclick="setWeather('Storm', this)">Storm</button>
+                    <button class="btn-neon" data-onclick="setWeather('Snow', this)">Snow</button>
+                    <button class="btn-neon" data-onclick="setWeather('Blizzard', this)">Blizzard</button>
+                    <button class="btn-neon" data-onclick="setWeather('Hurricane', this)">Hurricane</button>
                 </div>
             </div>
 
-            <button class="btn-neon pink" style="margin-top:30px;" onclick="openMainMenu()">Back</button>
+            <button class="btn-neon pink" style="margin-top:30px;" data-onclick="openMainMenu()">Back</button>
         </div>
 
         <!-- CAR SELECT MENU -->
@@ -876,16 +910,16 @@
             <div class="settings-group">
                 <span class="settings-label">Special Effect</span>
                 <div class="settings-options" id="effect-options">
-                    <button class="btn-neon active" onclick="setCarEffect('None', this)">None</button>
-                    <button class="btn-neon" onclick="setCarEffect('Trails', this)">Trails</button>
-                    <button class="btn-neon" onclick="setCarEffect('Glow', this)">Glow</button>
-                    <button class="btn-neon" onclick="setCarEffect('Flames', this)">Flames</button>
+                    <button class="btn-neon active" data-onclick="setCarEffect('None', this)">None</button>
+                    <button class="btn-neon" data-onclick="setCarEffect('Trails', this)">Trails</button>
+                    <button class="btn-neon" data-onclick="setCarEffect('Glow', this)">Glow</button>
+                    <button class="btn-neon" data-onclick="setCarEffect('Flames', this)">Flames</button>
                 </div>
             </div>
 
             <div style="margin-top: 20px; display: flex; justify-content: center; gap: 20px;">
-                <button class="btn-neon pink" onclick="openMainMenu()">Back</button>
-                <button class="btn-neon" onclick="handleCarSelectNext()">Next</button>
+                <button class="btn-neon pink" data-onclick="openMainMenu()">Back</button>
+                <button class="btn-neon" data-onclick="handleCarSelectNext()">Next</button>
             </div>
         </div>
 
@@ -894,9 +928,9 @@
             <h2 style="color: var(--neon-blue); font-size: 32px; margin-top:0;">RACE SETUP</h2>
             
             <div style="font-size: 24px; margin-bottom: 20px; display: flex; justify-content: center; align-items: center; gap: 20px;">
-                <button class="btn-neon" onclick="changeOpponents(-1)" style="padding: 10px 20px;">&lt;</button>
+                <button class="btn-neon" data-onclick="changeOpponents(-1)" style="padding: 10px 20px;">&lt;</button>
                 <span>OPPONENTS: <span id="opponent-count-val">3</span></span>
-                <button class="btn-neon" onclick="changeOpponents(1)" style="padding: 10px 20px;">&gt;</button>
+                <button class="btn-neon" data-onclick="changeOpponents(1)" style="padding: 10px 20px;">&gt;</button>
             </div>
 
             <div id="opponent-grid" class="map-grid" style="max-height: 40vh;">
@@ -904,8 +938,8 @@
             </div>
 
             <div style="margin-top: 20px; display: flex; justify-content: center; gap: 20px;">
-                <button class="btn-neon pink" onclick="openCarSelect()">Back</button>
-                <button class="btn-neon" onclick="openMapSelect()">Next</button>
+                <button class="btn-neon pink" data-onclick="openCarSelect()">Back</button>
+                <button class="btn-neon" data-onclick="openMapSelect()">Next</button>
             </div>
         </div>
 
@@ -915,7 +949,7 @@
             <div class="map-grid" id="map-grid-container">
                 <!-- Injected via JS -->
             </div>
-            <button class="btn-neon pink" style="margin-top:20px;" onclick="openRaceSetup()">Back</button>
+            <button class="btn-neon pink" style="margin-top:20px;" data-onclick="openRaceSetup()">Back</button>
         </div>
 
         <!-- FALL GUYS STYLE LOADING SCREEN -->
@@ -965,15 +999,15 @@
             <div style="font-size: 100px; margin-bottom: 20px; animation: pulseText 2s infinite alternate;">🏆</div>
             <h1 class="title" style="color: var(--neon-yellow); text-shadow: 0 0 20px var(--neon-yellow);">CUP CHAMPION!</h1>
             <p style="font-size: 24px; color: white;">You survived all 4 rounds and claimed victory!</p>
-            <button class="btn-neon" onclick="quitToMenu()" style="margin-top: 30px;">Main Menu</button>
+            <button class="btn-neon" data-onclick="quitToMenu()" style="margin-top: 30px;">Main Menu</button>
         </div>
 
         <!-- PAUSE MENU -->
         <div id="pause-menu" class="screen-panel hidden">
             <h1 style="color: var(--neon-yellow); text-shadow: 0 0 20px var(--neon-yellow);">PAUSED</h1>
-            <button class="btn-neon" onclick="togglePause()">Resume</button>
-            <button class="btn-neon pink" onclick="startLoadingScreen(currentMapIndex)">Restart Race</button>
-            <button class="btn-neon pink" onclick="quitToMenu()">Main Menu</button>
+            <button class="btn-neon" data-onclick="togglePause()">Resume</button>
+            <button class="btn-neon pink" data-onclick="startLoadingScreen(currentMapIndex)">Restart Race</button>
+            <button class="btn-neon pink" data-onclick="quitToMenu()">Main Menu</button>
         </div>
 
         <!-- GAME OVER / RESULTS (Quick Race) -->
@@ -986,8 +1020,8 @@
 
             <p id="result-stats" style="font-size: 20px; color: #ddd; margin-bottom: 30px;"></p>
             
-            <button class="btn-neon" onclick="startLoadingScreen(currentMapIndex)">Race Again</button>
-            <button class="btn-neon pink" onclick="quitToMenu()">Main Menu</button>
+            <button class="btn-neon" data-onclick="startLoadingScreen(currentMapIndex)">Race Again</button>
+            <button class="btn-neon pink" data-onclick="quitToMenu()">Main Menu</button>
         </div>
     </div>
 

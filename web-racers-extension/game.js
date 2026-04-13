@@ -386,7 +386,16 @@
         let spectateTarget = -1;
         let currentMapIndex = 0;
         let activeWaypoints = [];
-        let activeScenery = []; 
+        let activeScenery = [];
+        let itemBoxes = [];
+        let projectiles = [];
+        let traps = [];
+        let movingHazards = [];
+        let zoneHazards = [];
+        let coins = [];
+        let raceCoins = 0;
+        let playerCoins = parseInt(localStorage.getItem('webRacers_coins') || '0');
+        let playerUpgrades = JSON.parse(localStorage.getItem('webRacers_upgrades') || '{"speed":0, "accel":0, "handling":0, "nitro":0}'); 
         let flyoverObj = null;
         let loadingInterval = null;
         
@@ -535,6 +544,10 @@
             init() {
                 if (Tone.context.state !== 'running') {
                     Tone.start();
+                }
+                if (!this.raceAudioElements) {
+                    const files = ['Noon_on_the_Oval.mp3', 'figure-8.mp3', 'city circut.mp3', 'desert speedway.mp3', 'mountainpass.mp3', 'seasidecircut.mp3', 'technical track.mp3', 'PHX.mp3', 'mini-monaco.mp3', 'infinity loop.mp3'];
+                    this.raceAudioElements = files.map(f => { let a = new Audio(f); a.loop = true; return a; });
                 }
                 if (!this.menuAudioElement) {
                     this.menuAudioElement = new Audio('The_Final_Turn.mp3');
@@ -699,6 +712,9 @@
                 }
                 if (this.loadingAudioElement) {
                     this.loadingAudioElement.volume = this.muted ? 0 : 0.6;
+                }
+                if (this.raceAudioElements) {
+                    this.raceAudioElements.forEach(a => a.volume = this.muted ? 0 : 0.6);
                 }
                 if (this.rainAudioElement) {
                     if (this.muted) {
@@ -936,11 +952,19 @@
                 if (trackName === 'race_7' && this.phxAudioElement) {
                     this.phxAudioElement.currentTime = 0;
                     this.phxAudioElement.volume = this.muted ? 0 : 0.6;
-                    this.phxAudioElement.play().catch(e => {
-                        console.log("PHX audio play prevented/missing:", e);
-                        // Fail silently — no procedural fallback to avoid interval overlap
-                    });
+                    this.phxAudioElement.play().catch(e => {});
                     return;
+                }
+
+                if (trackName.startsWith('race_')) {
+                    let idx = parseInt(trackName.split('_')[1]);
+                    let a = this.raceAudioElements[idx];
+                    if (a) {
+                        a.currentTime = 0;
+                        a.volume = this.muted ? 0 : 0.6;
+                        a.play().catch(e => console.log("Audio play prevented:", e));
+                        return; // Prevent starting the procedural scheduleMusic loop
+                    }
                 }
 
                 this.currentBeat = 0;
@@ -997,6 +1021,21 @@
                     }, stepTime);
                 }
                 
+                if (this.raceAudioElements) {
+                    this.raceAudioElements.forEach(a => {
+                        if (!a.paused && a.volume > 0) {
+                            let startVol = a.volume;
+                            let steps = 20;
+                            let stepTime = (durationSecs * 1000) / steps;
+                            let stepVol = startVol / steps;
+                            let fadeInterval = setInterval(() => {
+                                if (a.volume > stepVol) a.volume -= stepVol;
+                                else { a.volume = 0; clearInterval(fadeInterval); }
+                            }, stepTime);
+                        }
+                    });
+                }
+                
                 setTimeout(() => this.stopMusic(), durationSecs * 1000);
             },
             stopMusic() {
@@ -1018,6 +1057,9 @@
                 }
                 if (this.loadingAudioElement) {
                     this.loadingAudioElement.pause();
+                }
+                if (this.raceAudioElements) {
+                    this.raceAudioElements.forEach(a => a.pause());
                 }
                 this.currentTrack = null;
             },
@@ -1186,53 +1228,63 @@
         const mapsData = [
             { 
                 name: "Classic Oval", 
-                waypoints: [{x:0,y:0}, {x:4000,y:0}, {x:4500,y:1000}, {x:4000,y:2000}, {x:0,y:2000}, {x:-500,y:1000}],
-                theme: { bgOuter: '#4a7c59', bgInner: '#5a9a6e', track: '#2a2a2a', border: '#b0b0b0', barrierColor: '#ffffff', barrierDash: [], line: 'white' }
+                waypoints: [{x:0,y:0}, {x:6000,y:0}, {x:7000,y:1500}, {x:6000,y:3000}, {x:0,y:3000}, {x:-1000,y:1500}],
+                theme: { bgOuter: '#4a7c59', bgInner: '#5a9a6e', track: '#2a2a2a', border: '#b0b0b0', barrierColor: '#ffffff', barrierDash: [], line: 'white' },
+                features: [{type: 'boost', x: 3000, y: 0, angle: 0}, {type: 'boost', x: 3000, y: 3000, angle: Math.PI}]
             },
             { 
                 name: "Figure-8", 
-                waypoints: [{x:0,y:0}, {x:2500,y:0}, {x:3500,y:1000}, {x:2500,y:2000}, {x:1000,y:2000}, {x:-1000,y:0}, {x:-2500,y:0}, {x:-3500,y:1000}, {x:-2500,y:2000}, {x:-1000,y:2000}],
-                theme: { bgOuter: '#3d7a3d', track: '#1e1e1e', border: '#ffffff', barrierColor: '#ffcc00', barrierDash: [20, 20], line: 'yellow_dash' }
+                waypoints: [{x:0,y:0}, {x:4000,y:0}, {x:6000,y:2000}, {x:4000,y:4000}, {x:1000,y:4000}, {x:-1000,y:0}, {x:-4000,y:0}, {x:-6000,y:2000}, {x:-4000,y:4000}, {x:-1000,y:4000}],
+                theme: { bgOuter: '#3d7a3d', track: '#1e1e1e', border: '#ffffff', barrierColor: '#ffcc00', barrierDash: [20, 20], line: 'yellow_dash' },
+                features: [{type: 'ramp', x: 2500, y: 2000, angle: Math.atan2(4000, 4000)}, {type: 'ramp', x: -2500, y: 2000, angle: Math.atan2(-4000, -4000)}]
             },
             { 
                 name: "City Circuit", 
-                waypoints: [{x:0,y:0}, {x:2500,y:0}, {x:2500,y:2000}, {x:4500,y:2000}, {x:4500,y:4000}, {x:0,y:4000}, {x:0,y:2000}, {x:-2000,y:2000}, {x:-2000,y:0}],
-                theme: { bgOuter: '#808080', track: '#111111', border: '#ffffff', barrierColor: '#cc0000', barrierDash: [40, 40], line: 'white' }
+                waypoints: [{x:0,y:0}, {x:3000,y:0}, {x:3000,y:2000}, {x:6000,y:2000}, {x:6000,y:5000}, {x:0,y:5000}, {x:0,y:3000}, {x:-3000,y:3000}, {x:-3000,y:0}],
+                theme: { bgOuter: '#808080', track: '#111111', border: '#ffffff', barrierColor: '#cc0000', barrierDash: [40, 40], line: 'white' },
+                features: [{type: 'boost', x: 1500, y: 0, angle: 0}, {type: 'oil', x: 4500, y: 2000, angle: 0}]
             },
             { 
                 name: "Desert Speedway", 
-                waypoints: [{x:0,y:0}, {x:8000,y:0}, {x:8500,y:1000}, {x:8000,y:2000}, {x:0,y:2000}, {x:-500,y:1000}],
-                theme: { bgOuter: '#d4b896', bgInner: '#c4a882', track: '#b8a882', border: '#c1440e', barrierColor: '#e67e22', barrierDash: [], line: 'white' }
+                waypoints: [{x:0,y:0}, {x:12000,y:0}, {x:13000,y:2000}, {x:12000,y:4000}, {x:0,y:4000}, {x:-1000,y:2000}],
+                theme: { bgOuter: '#d4b896', bgInner: '#c4a882', track: '#b8a882', border: '#c1440e', barrierColor: '#e67e22', barrierDash: [], line: 'white' },
+                features: [{type: 'ramp', x: 6000, y: 0, angle: 0}, {type: 'ramp', x: 6000, y: 4000, angle: Math.PI}]
             },
             { 
                 name: "Mountain Pass", 
-                waypoints: [{x:0,y:0}, {x:3000,y:0}, {x:3500,y:1200}, {x:1000,y:1200}, {x:0,y:2400}, {x:3000,y:2400}, {x:3500,y:3600}, {x:-1000,y:3600}, {x:-1000,y:1800}],
-                theme: { bgOuter: '#7a6a5a', track: '#555555', border: '#8b6914', barrierColor: '#aaaaaa', barrierDash: [40, 20], line: 'white_dash' }
+                waypoints: [{x:0,y:0}, {x:4000,y:0}, {x:5000,y:2000}, {x:1000,y:2000}, {x:0,y:4000}, {x:4000,y:4000}, {x:5000,y:6000}, {x:-2000,y:6000}, {x:-2000,y:3000}],
+                theme: { bgOuter: '#7a6a5a', track: '#555555', border: '#8b6914', barrierColor: '#aaaaaa', barrierDash: [40, 20], line: 'white_dash' },
+                features: [{type: 'boost', x: 2000, y: 0, angle: 0}, {type: 'boost', x: 2000, y: 4000, angle: 0}]
             },
             { 
                 name: "Seaside Circuit", 
-                waypoints: [{x:0,y:0}, {x:2000,y:-800}, {x:4000,y:0}, {x:5000,y:2000}, {x:4000,y:4000}, {x:2000,y:3500}, {x:0,y:4000}, {x:-1500,y:2000}],
-                theme: { bgOuter: '#e8d5a3', track: '#9a9a8a', border: '#d4c4a0', barrierColor: '#ffffff', barrierDash: [], line: 'white' }
+                waypoints: [{x:0,y:0}, {x:3000,y:-1000}, {x:6000,y:0}, {x:8000,y:3000}, {x:6000,y:6000}, {x:3000,y:5000}, {x:0,y:6000}, {x:-2500,y:3000}],
+                theme: { bgOuter: '#e8d5a3', track: '#9a9a8a', border: '#d4c4a0', barrierColor: '#ffffff', barrierDash: [], line: 'white' },
+                features: [{type: 'boost', x: 1500, y: -500, angle: Math.atan2(-1000, 3000)}, {type: 'ramp', x: 7000, y: 1500, angle: Math.atan2(3000, 2000)}]
             },
             { 
                 name: "Technical Track", 
-                waypoints: [{x:0,y:0}, {x:1500,y:0}, {x:2000,y:-1200}, {x:3500,y:-1200}, {x:4000,y:0}, {x:4000,y:3000}, {x:3000,y:3000}, {x:3000,y:1800}, {x:1500,y:1800}, {x:1500,y:3000}, {x:0,y:3000}],
-                theme: { bgOuter: '#4CAF50', track: '#1a1a1a', border: '#ffffff', barrierColor: '#cc0000', barrierDash: [30, 30], line: 'white' }
+                waypoints: [{x:0,y:0}, {x:2500,y:0}, {x:3000,y:-2000}, {x:5000,y:-2000}, {x:6000,y:0}, {x:6000,y:5000}, {x:4000,y:5000}, {x:4000,y:3000}, {x:2500,y:3000}, {x:2500,y:5000}, {x:0,y:5000}],
+                theme: { bgOuter: '#4CAF50', track: '#1a1a1a', border: '#ffffff', barrierColor: '#cc0000', barrierDash: [30, 30], line: 'white' },
+                features: [{type: 'oil', x: 1250, y: 0, angle: 0}, {type: 'oil', x: 4000, y: -2000, angle: 0}]
             },
             { 
                 name: "Phoenix Sky Harbor", 
-                waypoints: [{x:0,y:0}, {x:10000,y:0}, {x:10500,y:1200}, {x:10000,y:2400}, {x:0,y:2400}, {x:-1000,y:1200}],
-                theme: { bgOuter: '#555555', track: '#2a2b2e', border: '#FFD700', barrierColor: '#ffffff', barrierDash: [40, 40], line: 'white_dash', specialStart: 'hold_short' }
+                waypoints: [{x:0,y:0}, {x:6000,y:0}, {x:7000,y:-2000}, {x:11000,y:-2000}, {x:12000,y:0}, {x:16000,y:0}, {x:17000,y:2000}, {x:16000,y:4000}, {x:0,y:4000}, {x:-1000,y:2000}],
+                theme: { bgOuter: '#555555', track: '#2a2b2e', border: '#FFD700', barrierColor: '#ffffff', barrierDash: [40, 40], line: 'white_dash', specialStart: 'hold_short' },
+                features: [{type: 'boost', x: 3000, y: 0, angle: 0}, {type: 'boost', x: 14000, y: 0, angle: 0}, {type: 'airport_doors', x: 6500, y:-1000}, {type: 'airport_doors', x: 11500, y:-1000}]
             },
             { 
                 name: "Mini-Monaco", 
-                waypoints: [{x:0,y:0}, {x:1800,y:0}, {x:2400,y:900}, {x:1800,y:1800}, {x:600,y:1800}, {x:0,y:900}],
-                theme: { bgOuter: '#8B7355', track: '#0d0d0d', border: '#ffffff', barrierColor: '#cc0000', barrierDash: [30, 30], line: 'white' }
+                waypoints: [{x:0,y:0}, {x:3000,y:0}, {x:4000,y:1500}, {x:3000,y:3000}, {x:1000,y:3000}, {x:0,y:1500}],
+                theme: { bgOuter: '#8B7355', track: '#0d0d0d', border: '#ffffff', barrierColor: '#cc0000', barrierDash: [30, 30], line: 'white' },
+                features: [{type: 'boost', x: 1500, y: 0, angle: 0}]
             },
             { 
                 name: "Infinity Loop", 
-                waypoints: [{x:0,y:0}, {x:2000,y:-1200}, {x:4000,y:0}, {x:4000,y:2000}, {x:2000,y:3200}, {x:0,y:2000}, {x:-2000,y:3200}, {x:-4000,y:2000}, {x:-4000,y:0}, {x:-2000,y:-1200}],
-                theme: { bgOuter: '#050510', track: '#0a0a0f', border: '#6a0dad', borderStyle: 'neon', barrierColor: '#00f3ff', barrierDash: [50, 50], line: 'neon' }
+                waypoints: [{x:0,y:0}, {x:3000,y:-2000}, {x:6000,y:0}, {x:6000,y:3000}, {x:3000,y:5000}, {x:0,y:3000}, {x:-3000,y:5000}, {x:-6000,y:3000}, {x:-6000,y:0}, {x:-3000,y:-2000}],
+                theme: { bgOuter: '#050510', track: '#0a0a0f', border: '#6a0dad', borderStyle: 'neon', barrierColor: '#00f3ff', barrierDash: [50, 50], line: 'neon' },
+                features: [{type: 'boost', x: 1500, y: -1000, angle: Math.atan2(-2000, 3000)}, {type: 'ramp', x: -1500, y: -1000, angle: Math.atan2(-2000, -3000)}]
             }
         ];
         
@@ -1274,8 +1326,46 @@
         }
         // --- Environment Generator ---
         function generateScenery(mapIndex) {
-            activeScenery = [];
+            activeScenery = []; itemBoxes = []; projectiles = []; traps = []; movingHazards = []; zoneHazards = []; coins = [];
             let map = mapsData[mapIndex];
+
+            // Generate items and coins along the track path
+            for(let i=0; i<map.waypoints.length; i++) {
+                let wp1 = map.waypoints[i];
+                let wp2 = map.waypoints[(i+1)%map.waypoints.length];
+                let dx = wp2.x - wp1.x, dy = wp2.y - wp1.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                let cx = wp1.x + dx/2, cy = wp1.y + dy/2;
+                let perpX = -dy/dist, perpY = dx/dist;
+                
+                if (dist > 2000) {
+                    itemBoxes.push(new ItemBox(cx, cy));
+                    itemBoxes.push(new ItemBox(cx + perpX * 160, cy + perpY * 160));
+                    itemBoxes.push(new ItemBox(cx - perpX * 160, cy - perpY * 160));
+                }
+                
+                if (dist > 500) {
+                    for(let j=0; j<Math.floor(dist/600); j++) {
+                        let offset = (Math.random()-0.5)*200;
+                        coins.push(new Coin(cx + offset + (Math.random()-0.5)*50, cy + offset + (Math.random()-0.5)*50));
+                    }
+                }
+            }
+
+            // --- Dynamic Track Hazards Generation ---
+            if (mapIndex === 2) { // City Circuit
+                movingHazards.push(new MovingHazard('civilian_car', 1500, -1000, 1500, 1000, 15, 50));
+                movingHazards.push(new MovingHazard('civilian_car', 4500, 3000, 4500, 1000, 18, 50));
+            } else if (mapIndex === 3) { // Desert Speedway
+                movingHazards.push(new MovingHazard('train', 8000, -2000, 8000, 2000, 25, 150));
+                movingHazards.push(new MovingHazard('tumbleweed', 4000, -1000, 4000, 1000, 8, 30));
+                movingHazards.push(new MovingHazard('tumbleweed', 10000, 5000, 10000, 3000, 6, 30));
+            } else if (mapIndex === 9) { // Infinity Loop
+                // Teleporter shortcut!
+                zoneHazards.push(new ZoneHazard('teleporter', -3000, 5000, 150, 0, 3000, 0)); 
+                zoneHazards.push(new ZoneHazard('wind', 3000, 5000, 400, -1, 0, 8)); // Blows left
+            }
+
             
             let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
             map.waypoints.forEach(w => { minX=Math.min(minX,w.x); maxX=Math.max(maxX,w.x); minY=Math.min(minY,w.y); maxY=Math.max(maxY,w.y); });
@@ -1290,15 +1380,20 @@
             }
 
             if (mapIndex === 0) { // Classic Oval
-                for(let i=0; i<8; i++) {
-                    activeScenery.push({ type: 'tree_detailed', x: 900 + (Math.random()-0.5)*1500, y: 400 + (Math.random()-0.5)*1500 });
+                for(let i=0; i<60; i++) {
+                    activeScenery.push({ type: 'tree_detailed', x: 900 + (Math.random()-0.5)*3000, y: 400 + (Math.random()-0.5)*2000 });
                 }
-                activeScenery.push({ type: 'grandstand', x: 900, y: -300, angle: 0 }); 
-                activeScenery.push({ type: 'grandstand', x: 900, y: 1100, angle: Math.PI }); 
+                for(let i=0; i<10; i++) {
+                    activeScenery.push({ type: 'grandstand', x: 900 + (i-5)*150, y: -300, angle: 0 }); 
+                    activeScenery.push({ type: 'grandstand', x: 900 + (i-5)*150, y: 1100, angle: Math.PI }); 
+                }
                 activeScenery.push({ type: 'pit_lane', x: 900, y: 650, w: 800, h: 40 });
+                for(let i=0; i<5; i++) {
+                    activeScenery.push({ type: 'pit_garage', x: 500 + i*200, y: 700, w: 180, h: 50, angle: 0 });
+                }
             } else if (mapIndex === 1) { // Fig-8
-                for(let i=0; i<12; i++) {
-                    activeScenery.push({ type: 'pine_tree', x: minX + Math.random()*(maxX-minX), y: minY + Math.random()*(maxY-minY), s: 30+Math.random()*20 });
+                for(let i=0; i<120; i++) {
+                    activeScenery.push({ type: 'pine_tree', x: minX + Math.random()*(maxX-minX), y: minY + Math.random()*(maxY-minY), s: 20+Math.random()*40 });
                 }
                 let wps = map.waypoints;
                 for(let i=0; i<wps.length; i++) {
@@ -1306,78 +1401,128 @@
                     let dist = Math.sqrt(dist2(p1,p2));
                     let ang = Math.atan2(p2.y-p1.y, p2.x-p1.x);
                     let perp = ang + Math.PI/2;
-                    for(let d=0; d<dist; d+=60) {
+                    for(let d=0; d<dist; d+=40) {
                         let px = p1.x + Math.cos(ang)*d;
                         let py = p1.y + Math.sin(ang)*d;
                         activeScenery.push({type: 'fence_post', x: px + Math.cos(perp)*140, y: py + Math.sin(perp)*140});
                         activeScenery.push({type: 'fence_post', x: px - Math.cos(perp)*140, y: py - Math.sin(perp)*140});
+                        if (d % 200 < 40) {
+                            activeScenery.push({ type: 'tire_wall', x: px + Math.cos(perp)*180, y: py + Math.sin(perp)*180, w: 100, angle: ang });
+                            activeScenery.push({ type: 'tire_wall', x: px - Math.cos(perp)*180, y: py - Math.sin(perp)*180, w: 100, angle: ang });
+                        }
                     }
                 }
             } else if (mapIndex === 2) { // City
-                for(let i=0; i<6; i++) {
-                    activeScenery.push({ type: 'building_lit', x: minX + Math.random()*(maxX-minX), y: minY + Math.random()*(maxY-minY), w: 60+Math.random()*60, h: 60+Math.random()*60, c: Math.random()>0.5?'#6b6b6b':'#4a4a4a' });
+                for(let i=0; i<40; i++) {
+                    let w = 80+Math.random()*120, h = 80+Math.random()*120;
+                    activeScenery.push({ type: 'building_lit', x: minX + Math.random()*(maxX-minX), y: minY + Math.random()*(maxY-minY), w: w, h: h, c: Math.random()>0.5?'#2b2b2b':(Math.random()>0.5?'#3a3a4a':'#1a1a1a') });
                 }
                 activeScenery.push({ type: 'crosswalk', x: 500, y: 0, w: config.trackWidth, h: 40, angle: 0 });
                 activeScenery.push({ type: 'crosswalk', x: 500, y: 800, w: config.trackWidth, h: 40, angle: 0 });
-                for(let x=150; x<1700; x+=200) {
+                activeScenery.push({ type: 'crosswalk', x: 2500, y: 1000, w: config.trackWidth, h: 40, angle: Math.PI/2 });
+                for(let x=150; x<4000; x+=150) {
                     activeScenery.push({ type: 'streetlight', x: x, y: -160, angle: 0 });
                     activeScenery.push({ type: 'streetlight', x: x, y: 160, angle: Math.PI });
+                    activeScenery.push({ type: 'streetlight', x: x, y: 1840, angle: 0 });
+                    activeScenery.push({ type: 'streetlight', x: x, y: 2160, angle: Math.PI });
                 }
             } else if (mapIndex === 3) { // Desert
-                for(let i=0; i<5; i++) {
+                for(let i=0; i<60; i++) {
                     activeScenery.push({ type: 'cactus_detailed', x: minX + Math.random()*(maxX-minX), y: minY + Math.random()*(maxY-minY) });
                 }
-                for(let i=0; i<6; i++) {
+                for(let i=0; i<30; i++) {
                     let pts = [];
-                    for(let j=0; j<8; j++) {
-                        let a = (j/8)*Math.PI*2;
-                        let r = 40 + Math.random()*40;
+                    for(let j=0; j<10; j++) {
+                        let a = (j/10)*Math.PI*2;
+                        let r = 40 + Math.random()*80;
                         pts.push({x: Math.cos(a)*r, y: Math.sin(a)*r});
                     }
                     activeScenery.push({type: 'rock_formation', x: minX+Math.random()*(maxX-minX), y: minY+Math.random()*(maxY-minY), pts: pts});
                 }
                 let dots = [];
-                for(let i=0; i<500; i++) dots.push({x: minX+Math.random()*(maxX-minX), y: minY+Math.random()*(maxY-minY)});
+                for(let i=0; i<3000; i++) dots.push({x: minX+Math.random()*(maxX-minX), y: minY+Math.random()*(maxY-minY)});
                 activeScenery.push({type: 'sand_dots', dots: dots});
+                for(let i=0; i<15; i++) {
+                    activeScenery.push({ type: 'palm_tree', x: minX + Math.random()*(maxX-minX), y: minY + Math.random()*(maxY-minY) });
+                }
             } else if (mapIndex === 4) { // Mountain
-                activeScenery.push({ type: 'mountain_peak', x: minX+(maxX-minX)*0.2, y: minY, w: 400, h: 600 });
-                activeScenery.push({ type: 'mountain_peak', x: minX+(maxX-minX)*0.8, y: minY, w: 500, h: 700 });
-                for(let i=0; i<30; i++) {
-                    activeScenery.push({ type: 'pine_tree', x: minX + Math.random()*(maxX-minX), y: minY + Math.random()*(maxY-minY), s: 30+Math.random()*20 });
+                for(let i=1; i<6; i++) {
+                    activeScenery.push({ type: 'mountain_peak', x: minX+(maxX-minX)*(i*0.15), y: minY, w: 300+Math.random()*400, h: 500+Math.random()*500 });
+                }
+                for(let i=0; i<200; i++) {
+                    activeScenery.push({ type: 'pine_tree', x: minX + Math.random()*(maxX-minX), y: minY + Math.random()*(maxY-minY), s: 25+Math.random()*35 });
                 }
                 let cliffPts = [];
-                for(let x=minX; x<maxX; x+=100) cliffPts.push({x: x, y: minY + 300 + Math.random()*100});
+                for(let x=minX-500; x<maxX+500; x+=100) cliffPts.push({x: x, y: minY + 300 + Math.random()*200});
                 activeScenery.push({type: 'cliff_face', pts: cliffPts});
             } else if (mapIndex === 5) { // Seaside
                 activeScenery.push({ type: 'rect', x: minX, y: minY, w: maxX-minX, h: (maxY-minY)/2, c: '#1a7ab8' }); 
-                for(let i=0; i<60; i++) {
+                for(let i=0; i<150; i++) {
                     let x = minX + Math.random()*(maxX-minX), y = minY + Math.random()*((maxY-minY)/2 - 50);
-                    activeScenery.push({ type: 'wave', x, y, w: 40+Math.random()*60, c: 'rgba(255,255,255,0.3)' });
+                    activeScenery.push({ type: 'animated_wave', x, y, w: 60+Math.random()*80, c: 'rgba(255,255,255,0.4)' });
+                }
+                for(let i=0; i<50; i++) {
+                    activeScenery.push({ type: 'palm_tree', x: minX + Math.random()*(maxX-minX), y: (minY+maxY)/2 + 100 + Math.random()*((maxY-minY)/2 - 100) });
+                }
+                for(let i=0; i<20; i++) {
+                    activeScenery.push({ type: 'seagull', x: minX + Math.random()*(maxX-minX), y: minY + Math.random()*(maxY-minY), offsetX: Math.random()*1000 });
                 }
             } else if (mapIndex === 6) { // Technical
-                activeScenery.push({ type: 'pit_garage', x: 250, y: 180, w: 200, h: 60, angle: 0 }); 
-                activeScenery.push({ type: 'pit_lane', x: 250, y: 100, w: 250, h: 30 });
-                activeScenery.push({ type: 'tire_wall', x: 800, y: -250, w: 150, angle: Math.PI/4 });
-                activeScenery.push({ type: 'tire_wall', x: 1200, y: -250, w: 150, angle: -Math.PI/4 });
+                for(let i=0; i<6; i++) {
+                    activeScenery.push({ type: 'pit_garage', x: 100 + i*220, y: 180, w: 200, h: 60, angle: 0 }); 
+                }
+                activeScenery.push({ type: 'pit_lane', x: 400, y: 100, w: 1200, h: 30 });
+                for(let i=0; i<15; i++) {
+                    activeScenery.push({ type: 'tire_wall', x: 800 + i*160, y: -250, w: 150, angle: 0 });
+                    activeScenery.push({ type: 'tire_wall', x: 1200 + i*160, y: -250, w: 150, angle: 0 });
+                }
+                for(let i=0; i<8; i++) {
+                    activeScenery.push({ type: 'grandstand', x: 1500, y: 1000 + i*200, angle: -Math.PI/2 });
+                }
             } else if (mapIndex === 7) { // Phoenix Sky Harbor
-                // Runway markings for the main top runway (y = 0)
-                activeScenery.push({ type: 'runway_markings', x: 0, y: 0, length: 6000 });
+                activeScenery.push({ type: 'runway_markings', x: 0, y: 0, length: 12000 });
+                activeScenery.push({ type: 'runway_markings', x: 0, y: 2400, length: 12000 });
                 
-                // Airplanes parked at terminals (drawn under the bridge)
-                for(let px = 1800; px <= 4200; px += 400) {
-                    activeScenery.push({ type: 'airplane', x: px, y: 500, angle: Math.PI, c: '#eeeeee', accent: '#1a7ab8' });
-                    activeScenery.push({ type: 'airplane', x: px + 150, y: 500, angle: 0, c: '#eeeeee', accent: '#e63946' });
+                // AIRPORT INTERIOR
+                activeScenery.push({ type: 'airport_floor', x: 9000, y: -2000, w: 4000, h: 1600 });
+                for(let i=7500; i<=10500; i+=600) {
+                    activeScenery.push({ type: 'airport_shop', x: i, y: -2500, w: 300, h: 200 });
+                    activeScenery.push({ type: 'airport_shop', x: i, y: -1500, w: 300, h: 200 });
+                }
+                activeScenery.push({ type: 'airport_bathroom', x: 9000, y: -2500, w: 400, h: 200 });
+                for(let x=0; x<12000; x+=150) {
+                    activeScenery.push({ type: 'runway_light', x: x, y: -120 });
+                    activeScenery.push({ type: 'runway_light', x: x, y: 120 });
+                    activeScenery.push({ type: 'runway_light', x: x, y: 2280 });
+                    activeScenery.push({ type: 'runway_light', x: x, y: 2520 });
+                }
+                for(let px = 1800; px <= 8000; px += 350) {
+                    if (Math.random() > 0.3) activeScenery.push({ type: 'airplane', x: px, y: 600 + Math.random()*200, angle: Math.PI + (Math.random()-0.5)*0.2, c: '#eeeeee', accent: '#1a7ab8' });
+                    if (Math.random() > 0.3) activeScenery.push({ type: 'airplane', x: px + 150, y: 1800 - Math.random()*200, angle: (Math.random()-0.5)*0.2, c: '#dddddd', accent: '#e63946' });
                 }
             } else if (mapIndex === 8) { // Monaco
                 activeScenery.push({ type: 'rect', x: minX, y: minY, w: (maxX-minX)/2, h: maxY-minY, c: '#1565C0' }); // Ocean left
+                for(let i=0; i<80; i++) {
+                    let x = minX + Math.random()*((maxX-minX)/2 - 50), y = minY + Math.random()*(maxY-minY);
+                    activeScenery.push({ type: 'animated_wave', x, y, w: 40+Math.random()*50, c: 'rgba(255,255,255,0.4)' });
+                }
                 for(let i=0; i<30; i++) {
-                    let x = (minX+maxX)/2 + 100 + Math.random()*((maxX-minX)/2 - 200), y = minY + Math.random()*(maxY-minY);
-                    if(!isNearTrack(x, y, config.trackWidth/2 + 50)) activeScenery.push({ type: 'building_lit', x: x, y: y, w: 80+Math.random()*60, h: 80+Math.random()*60, c: '#F5DEB3' }); 
+                    activeScenery.push({ type: 'palm_tree', x: (minX+maxX)/2 + 50 + Math.random()*150, y: minY + Math.random()*(maxY-minY) });
+                }
+                for(let i=0; i<80; i++) {
+                    let x = (minX+maxX)/2 + 150 + Math.random()*((maxX-minX)/2 - 200), y = minY + Math.random()*(maxY-minY);
+                    if(!isNearTrack(x, y, config.trackWidth/2 + 50)) {
+                        activeScenery.push({ type: 'building_lit', x: x, y: y, w: 80+Math.random()*80, h: 80+Math.random()*100, c: Math.random()>0.5?'#F5DEB3':'#E6C280' }); 
+                    }
                 }
             } else if (mapIndex === 9) { // Infinity
-                for(let i=0; i<200; i++) {
+                for(let i=0; i<600; i++) {
                     let x = minX + Math.random()*(maxX-minX), y = minY + Math.random()*(maxY-minY);
-                    activeScenery.push({ type: 'circle', x, y, r: 1+Math.random()*2, c: Math.random()>0.5?'#fff':'#00f3ff' });
+                    activeScenery.push({ type: 'circle', x, y, r: 1+Math.random()*4, c: Math.random()>0.7?'#ff00ea':(Math.random()>0.5?'#fff':'#00f3ff') });
+                }
+                for(let i=0; i<60; i++) {
+                    let w = 100 + Math.random()*200, h = 100 + Math.random()*200;
+                    activeScenery.push({ type: 'building_lit', x: minX + Math.random()*(maxX-minX), y: minY + Math.random()*(maxY-minY), w: w, h: h, c: '#0a0a1a' });
                 }
             }
         }
@@ -1385,6 +1530,10 @@
         function renderScenery(ctx) {
             activeScenery.forEach(s => {
                 ctx.save();
+                let noShadow = s.type === 'circle' || s.type === 'sand_dots' || s.type === 'animated_wave' || s.type === 'wave' || s.type === 'fence_post' || s.type === 'runway_light' || s.type === 'seagull' || s.type === 'crosswalk' || s.type === 'rect' || s.type === 'cliff_face' || s.type === 'runway_markings' || s.type === 'streetlight';
+                if (!noShadow) {
+                    ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 5;
+                }
                 if(s.x !== undefined && s.y !== undefined) {
                     ctx.translate(s.x, s.y);
                     if(s.angle !== undefined) ctx.rotate(s.angle);
@@ -1411,7 +1560,7 @@
                     ctx.fillStyle = '#1a4314'; ctx.beginPath(); ctx.moveTo(0, -s.s); ctx.lineTo(s.s*0.8, s.s); ctx.lineTo(-s.s*0.8, s.s); ctx.fill();
                 } else if (s.type === 'fence_post') {
                     ctx.fillStyle = '#5c4033'; ctx.fillRect(-2, -2, 4, 4);
-                } else if (s.type === 'building_lit') {
+                } else if (s.type === 'building_lit') { ctx.shadowBlur = 20; ctx.shadowOffsetY = 15;
                     ctx.fillStyle = s.c; ctx.fillRect(-s.w/2, -s.h/2, s.w, s.h);
                     ctx.fillStyle = '#fbc531';
                     for(let wx = -s.w/2 + 10; wx < s.w/2 - 10; wx += 15) {
@@ -1448,7 +1597,7 @@
                     ctx.beginPath(); ctx.moveTo(s.pts[0].x, s.pts[0].y);
                     for(let i=1; i<s.pts.length; i++) ctx.lineTo(s.pts[i].x, s.pts[i].y);
                     ctx.stroke();
-                } else if (s.type === 'animated_wave') {
+                } else if (s.type === 'animated_wave') { ctx.shadowColor = 'transparent';
                     let time = Date.now() / 1000;
                     ctx.strokeStyle = '#6495ED'; ctx.lineWidth = 3;
                     ctx.beginPath();
@@ -1499,7 +1648,7 @@
                         ctx.fillStyle = (i/12)%2===0 ? '#cc0000' : '#ffffff';
                         ctx.fillRect(-s.w/2 + i, -5, 12, 10);
                     }
-                } else if (s.type === 'runway_light') {
+                } else if (s.type === 'runway_light') { ctx.shadowColor = s.c; ctx.shadowBlur = 15; ctx.shadowOffsetY = 0;
                     ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 10;
                     ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
                 } else if (s.type === 'airplane') {
@@ -1516,11 +1665,246 @@
                     ctx.fillStyle = s.c;
                     ctx.beginPath(); ctx.moveTo(-10, 100); ctx.lineTo(-50, 120); ctx.lineTo(-50, 130); ctx.lineTo(-10, 115); ctx.fill();
                     ctx.beginPath(); ctx.moveTo(10, 100); ctx.lineTo(50, 120); ctx.lineTo(50, 130); ctx.lineTo(10, 115); ctx.fill();
-                } else if (s.type === 'circle') {
+                } else if (s.type === 'circle') { ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
                     ctx.fillStyle = s.c; ctx.beginPath(); ctx.arc(0, 0, s.r, 0, Math.PI*2); ctx.fill();
+                } else if (s.type === 'airport_floor') {
+                    ctx.fillStyle = '#dddddd';
+                    ctx.fillRect(-s.w/2, -s.h/2, s.w, s.h);
+                    ctx.strokeStyle = '#cccccc';
+                    ctx.lineWidth = 2;
+                    for (let i = -s.w/2; i < s.w/2; i += 100) {
+                        ctx.beginPath(); ctx.moveTo(i, -s.h/2); ctx.lineTo(i, s.h/2); ctx.stroke();
+                    }
+                    for (let j = -s.h/2; j < s.h/2; j += 100) {
+                        ctx.beginPath(); ctx.moveTo(-s.w/2, j); ctx.lineTo(s.w/2, j); ctx.stroke();
+                    }
+                } else if (s.type === 'airport_shop') {
+                    ctx.fillStyle = '#88ccff'; ctx.fillRect(-s.w/2, -s.h/2, s.w, s.h);
+                    ctx.fillStyle = '#111'; ctx.font = 'bold 30px Orbitron'; ctx.fillText('DUTY FREE', -s.w/2 + 20, 0);
+                } else if (s.type === 'airport_bathroom') {
+                    ctx.fillStyle = '#eeeeee'; ctx.fillRect(-s.w/2, -s.h/2, s.w, s.h);
+                    ctx.fillStyle = '#111'; ctx.font = 'bold 30px Orbitron'; ctx.fillText('RESTROOMS', -s.w/2 + 10, 0);
                 }
                 ctx.restore();
             });
+        }
+
+        
+        
+        class MovingHazard {
+            constructor(type, startX, startY, endX, endY, speed, size) {
+                this.type = type; this.startX = startX; this.startY = startY; 
+                this.endX = endX; this.endY = endY; this.speed = speed; this.size = size;
+                this.x = startX; this.y = startY;
+                let dx = endX - startX, dy = endY - startY;
+                this.angle = Math.atan2(dy, dx);
+                this.distTotal = Math.sqrt(dx*dx + dy*dy);
+                this.progress = 0;
+            }
+            update() {
+                this.progress += this.speed;
+                if (this.progress > this.distTotal) this.progress = 0;
+                this.x = this.startX + Math.cos(this.angle) * this.progress;
+                this.y = this.startY + Math.sin(this.angle) * this.progress;
+
+                // Collision with cars
+                cars.forEach(c => {
+                    let dx = c.x - this.x, dy = c.y - this.y;
+                    if (dx*dx + dy*dy < this.size * this.size) {
+                        if (c.shieldTimer > 0) {
+                            c.shieldTimer = 0;
+                            if (c.isPlayer) audio.playSynth('synthBass', 40, 0, 0.2, 0.5);
+                        } else if (c.spinTimer <= 0) {
+                            c.spinTimer = 45; c.speed *= 0.2;
+                            c.x += Math.cos(this.angle) * 30; // Push
+                            c.y += Math.sin(this.angle) * 30;
+                            if (c.isPlayer) { cameraShake = Math.max(cameraShake, 12); audio.playSynth('orchestraHit', 35, 0, 1, 0.7); }
+                        }
+                    }
+                });
+            }
+            draw(ctx) {
+                ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.angle);
+                if (this.type === 'train') {
+                    ctx.fillStyle = '#444'; ctx.fillRect(-150, -40, 300, 80);
+                    ctx.fillStyle = '#222'; ctx.fillRect(-140, -30, 280, 60);
+                    ctx.fillStyle = '#ffcc00'; ctx.fillRect(130, -10, 20, 20); // headlight
+                } else if (this.type === 'civilian_car') {
+                    ctx.fillStyle = '#3498db'; ctx.fillRect(-30, -20, 60, 40);
+                    ctx.fillStyle = '#111'; ctx.fillRect(-10, -18, 30, 36); // roof/windows
+                    ctx.fillStyle = '#fff'; ctx.fillRect(25, -15, 5, 10); ctx.fillRect(25, 5, 5, 10); // headlights
+                } else if (this.type === 'tumbleweed') {
+                    ctx.rotate(this.progress * 0.05);
+                    ctx.strokeStyle = '#c2a578'; ctx.lineWidth = 3;
+                    for (let i=0; i<5; i++) {
+                        ctx.beginPath(); ctx.ellipse(0, 0, 20 + Math.random()*5, 15 + Math.random()*10, i, 0, Math.PI*2); ctx.stroke();
+                    }
+                }
+                ctx.restore();
+            }
+        }
+
+        class ZoneHazard {
+            constructor(type, x, y, radius, dirX, dirY, force) {
+                this.type = type; this.x = x; this.y = y; this.radius = radius; 
+                this.dirX = dirX; this.dirY = dirY; this.force = force;
+                this.animOffset = 0;
+            }
+            update() {
+                this.animOffset += 2;
+                cars.forEach(c => {
+                    let dx = c.x - this.x, dy = c.y - this.y;
+                    if (dx*dx + dy*dy < this.radius * this.radius) {
+                        if (this.type === 'wind' || this.type === 'conveyor') {
+                            c.x += this.dirX * this.force;
+                            c.y += this.dirY * this.force;
+                            if (Math.random() < 0.2) fx.addParticle(c.x, c.y, this.dirX*5, this.dirY*5, 3, '#fff', 15, false);
+                        } else if (this.type === 'teleporter' && c.teleportCooldown <= 0) {
+                            c.x = this.dirX; c.y = this.dirY;
+                            c.teleportCooldown = 60;
+                            if(c.isPlayer) audio.playSynth('trumpet', 84, Tone.now(), 0.5, 0.4);
+                            fx.addParticle(c.x, c.y, 0, 0, 50, '#ff00ea', 20, false);
+                        }
+                    }
+                });
+            }
+            draw(ctx) {
+                ctx.save(); ctx.translate(this.x, this.y);
+                if (this.type === 'wind') {
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'; ctx.lineWidth = 4;
+                    for(let i=0; i<5; i++) {
+                        let px = (this.animOffset + i*40) % (this.radius*2) - this.radius;
+                        let py = (Math.sin(px*0.05) * 20);
+                        let ang = Math.atan2(this.dirY, this.dirX);
+                        ctx.save(); ctx.rotate(ang); ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + 20, py); ctx.stroke(); ctx.restore();
+                    }
+                } else if (this.type === 'teleporter') {
+                    ctx.rotate(this.animOffset * 0.05);
+                    let grad = ctx.createRadialGradient(0,0,0, 0,0,this.radius);
+                    grad.addColorStop(0, 'rgba(255, 0, 234, 0.8)');
+                    grad.addColorStop(1, 'rgba(0, 243, 255, 0)');
+                    ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0,0,this.radius,0,Math.PI*2); ctx.fill();
+                    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+                }
+                ctx.restore();
+            }
+        }
+        
+        class Coin {
+            constructor(x, y) { this.x = x; this.y = y; this.active = true; this.angle = 0; }
+            update() { this.angle += 0.1; }
+            draw(ctx) {
+                if (!this.active) return;
+                ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.angle); ctx.scale(Math.sin(Date.now()/200)*0.5+0.8, 1);
+                ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 15; ctx.shadowOffsetY = 10; ctx.fillStyle = '#ffcc00'; ctx.beginPath(); ctx.arc(0,0,14,0,Math.PI*2); ctx.fill();
+                ctx.strokeStyle = '#ff9900'; ctx.lineWidth = 3; ctx.stroke();
+                ctx.fillStyle = '#b8860b'; ctx.font = 'bold 16px Orbitron'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('$', 0, 0);
+                ctx.restore();
+            }
+        }
+        class ItemBox {
+            constructor(x, y) { this.x = x; this.y = y; this.active = true; this.respawnTimer = 0; this.angle = 0; }
+            update() {
+                this.angle += 0.05;
+                if (!this.active) { this.respawnTimer--; if (this.respawnTimer <= 0) this.active = true; }
+            }
+            draw(ctx) {
+                if (!this.active) return;
+                ctx.save();
+                this.yOffset = Math.sin(Date.now() / 200) * 10;
+                ctx.translate(this.x, this.y + this.yOffset); ctx.rotate(this.angle);
+                ctx.shadowColor = '#00f3ff'; ctx.shadowBlur = 20; ctx.fillStyle = 'rgba(0, 255, 255, 0.4)'; ctx.fillRect(-25, -25, 50, 50);
+                ctx.strokeStyle = '#00f3ff'; ctx.lineWidth = 4; ctx.strokeRect(-25, -25, 50, 50);
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 36px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('?', 0, 0);
+                ctx.restore();
+            }
+        }
+        class Projectile {
+            constructor(x, y, angle, type, owner) {
+                this.x = x; this.y = y; this.angle = angle; this.type = type; this.owner = owner;
+                this.speed = type === 'Laser' ? 40 : 25;
+                this.life = type === 'Laser' ? 80 : 300;
+                this.target = null;
+                if (type === 'Missile') {
+                    let bestDist = Infinity;
+                    cars.forEach(c => {
+                        if (c !== owner) {
+                            let dx = c.x - this.x, dy = c.y - this.y;
+                            let ang = Math.atan2(dy, dx);
+                            let angDiff = Math.abs(normalizeAngle(ang - this.angle));
+                            let d2 = dx*dx + dy*dy;
+                            if (angDiff < Math.PI/2 && d2 < bestDist) { bestDist = d2; this.target = c; }
+                        }
+                    });
+                }
+            }
+            update() {
+                this.life--;
+                if (this.type === 'Missile' && this.target) {
+                    let dx = this.target.x - this.x, dy = this.target.y - this.y;
+                    let targetAngle = Math.atan2(dy, dx);
+                    this.angle += normalizeAngle(targetAngle - this.angle) * 0.1;
+                }
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed;
+                
+                fx.addParticle(this.x, this.y, 0, 0, 4, this.type === 'Laser' ? '#ff00ea' : '#ff3300', 15, false);
+                
+                cars.forEach(c => {
+                    if (c !== this.owner && dist2(this, c) < 2500) {
+                        this.life = 0;
+                        if (c.shieldTimer > 0) { c.shieldTimer = 0; if(c.isPlayer) audio.playSynth('synthBass', 40, 0, 0.2, 0.5); }
+                        else {
+                            c.spinTimer = 45; c.speed *= 0.3;
+                            if (c.isPlayer) cameraShake = Math.max(cameraShake, 10);
+                            if (c.isPlayer || this.owner.isPlayer) audio.playSynth('orchestraHit', 48, 0, 1, 0.5);
+                        }
+                    }
+                });
+            }
+            draw(ctx) {
+                ctx.save();
+                this.yOffset = Math.sin(Date.now() / 200) * 10;
+                ctx.translate(this.x, this.y + this.yOffset); ctx.rotate(this.angle);
+                if (this.type === 'Laser') {
+                    ctx.strokeStyle = '#ff00ea'; ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(-30, 0); ctx.lineTo(30, 0); ctx.stroke();
+                } else {
+                    ctx.fillStyle = '#ff3300'; ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#fff'; ctx.fillRect(-20, -6, 20, 12);
+                }
+                ctx.restore();
+            }
+        }
+        class Trap {
+            constructor(x, y, type, owner) {
+                this.x = x; this.y = y; this.type = type; this.owner = owner; this.life = 3000; this.activeDelay = 30;
+            }
+            update() {
+                this.life--;
+                if (this.activeDelay > 0) this.activeDelay--;
+                else {
+                    cars.forEach(c => {
+                        if (dist2(this, c) < 2500) {
+                            this.life = 0;
+                            fx.addParticle(this.x, this.y, 0, 0, 30, '#ffaa00', 20, false);
+                            if (c.shieldTimer > 0) { c.shieldTimer = 0; if(c.isPlayer) audio.playSynth('synthBass', 40, 0, 0.2, 0.5); }
+                            else {
+                                c.spinTimer = 60; c.speed *= 0.3;
+                                if (c.isPlayer) cameraShake = Math.max(cameraShake, 15);
+                                if (c.isPlayer || this.owner.isPlayer) audio.playSynth('orchestraHit', 40, 0, 1.5, 0.6);
+                            }
+                        }
+                    });
+                }
+            }
+            draw(ctx) {
+                ctx.save(); ctx.translate(this.x, this.y);
+                ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#ff0000'; ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
+                if (this.life % 20 < 10) { ctx.fillStyle = '#ffff00'; ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI*2); ctx.fill(); }
+                ctx.restore();
+            }
         }
 
         // --- Car Class ---
@@ -1582,6 +1966,15 @@
                 this.stuckFrames = 0;
                 this.reverseTimer = 0;
                 this.currentSegment = 0;
+                this.jumpTimer = 0;
+                this.spinTimer = 0;
+                this.item = null;
+                this.itemRouletteTimer = 0;
+                this.shieldTimer = 0;
+                this.isDrifting = false;
+                this.driftTimer = 0;
+                this.driftDir = 1;
+                this.miniTurboTimer = 0;
 
                 this.teleportTimer = 0;
                 this.teleportStartX = 0;
@@ -1690,7 +2083,8 @@
                             }
                             if (this.onTrack) {
                                 this.nitro += 8 / config.fps;
-                                if (this.nitro > 100) this.nitro = 100;
+                                let maxN = this.isPlayer ? 100 + playerUpgrades.nitro * 20 : 100;
+                                if (this.nitro > maxN) this.nitro = maxN;
                                 if (this.nitroLocked && this.nitro >= 20) {
                                     this.nitroLocked = false;
                                 }
@@ -1756,6 +2150,45 @@
                             }
                         }
                     }
+
+                                    // --- Map Features & Hazards ---
+                let map = mapsData[currentMapIndex];
+                if (map.features) {
+                    map.features.forEach(f => {
+                        if (f.type === 'boost' || f.type === 'ramp' || f.type === 'oil') {
+                            let dx = this.x - f.x;
+                            let dy = this.y - f.y;
+                            if (dx*dx + dy*dy < 10000) { // ~100px radius
+                                if (f.type === 'boost') {
+                                    this.speed = this.maxSpeed * 1.5;
+                                    this.nitro = Math.min(100, this.nitro + 5);
+                                    if (this.isPlayer) cameraShake = Math.max(cameraShake, 5);
+                                } else if (f.type === 'ramp') {
+                                    if (this.jumpTimer <= 0) {
+                                        this.jumpTimer = 40;
+                                        if (this.isPlayer) audio.playSynth('trumpet', 72 + Math.random()*12, Tone.now(), 0.2, 0.4);
+                                    }
+                                } else if (f.type === 'oil') {
+                                    if (this.spinTimer <= 0 && this.jumpTimer <= 0) {
+                                        this.spinTimer = 30;
+                                        this.speed *= 0.5;
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+                
+                if (this.jumpTimer > 0) {
+                    this.jumpTimer--;
+                    this.onTrack = true; // Ignore offroad while jumping
+                }
+                
+                if (this.spinTimer > 0) {
+                    this.spinTimer--;
+                    this.angle += 0.3;
+                    this.targetAngle = this.angle;
+                }
 
                     this.applyFrictionAndMovement();
 
@@ -1867,6 +2300,25 @@
                             fx.addParticle(rrX, rrY, (Math.random()-0.5)*1, (Math.random()-0.5)*1, 4 + Math.random()*3, '#e0e0e0', 60, true);
                         }
                     }
+                    
+                    // Drifting Sparks
+                    if (this.isDrifting) {
+                        fx.addSkidMark(rlX, rlY, this.angle);
+                        fx.addSkidMark(rrX, rrY, this.angle);
+                        let sparkColor = '#00f3ff'; // Blue
+                        if (this.driftTimer > 120) sparkColor = '#ff00ea'; // Pink
+                        else if (this.driftTimer > 60) sparkColor = '#ffaa00'; // Orange
+                        
+                        if (Math.random() < 0.6) {
+                            fx.addParticle(rlX, rlY, (Math.random()-0.5)*4, (Math.random()-0.5)*4, 2 + Math.random()*2, sparkColor, 20, false);
+                            fx.addParticle(rrX, rrY, (Math.random()-0.5)*4, (Math.random()-0.5)*4, 2 + Math.random()*2, sparkColor, 20, false);
+                        }
+                    }
+                    
+                    // Mini Turbo Flames
+                    if (this.miniTurboTimer > 0) {
+                        fx.addParticle(rearX, rearY, -Math.cos(this.angle)*5 + (Math.random()-0.5)*2, -Math.sin(this.angle)*5 + (Math.random()-0.5)*2, 3 + Math.random()*3, '#00f3ff', 15, false);
+                    }
 
                     // Exhaust / Dust
                     if (this.isOffRoad && Math.abs(this.speed) > 2) {
@@ -1883,9 +2335,20 @@
             }
 
             handlePlayerInput(keys) {
-                // Incorporate drafting boosts into physics limits
-                let currentAccel = this.baseAcceleration * (this.nitroActive ? 2 : (this.isDrafting ? 1.3 : 1));
-                let currentMaxSpeed = this.maxSpeed * (this.nitroActive ? 1.6 : (this.isDrafting ? 1.15 : 1));
+                // Incorporate drafting & mini-turbo boosts into physics limits
+                let boostMult = 1;
+                if (this.nitroActive) boostMult = 2.0;
+                else if (this.miniTurboTimer > 0) boostMult = 1.8;
+                else if (this.isDrafting) boostMult = 1.3;
+                
+                let upgSpeed = this.isPlayer ? 1 + playerUpgrades.speed * 0.05 : 1;
+                let upgAccel = this.isPlayer ? 1 + playerUpgrades.accel * 0.10 : 1;
+
+                let currentAccel = this.baseAcceleration * boostMult * upgAccel;
+                let currentMaxSpeed = this.maxSpeed * boostMult * upgSpeed;
+                
+                if (this.miniTurboTimer > 0) this.miniTurboTimer--;
+                if ((keys['e'] || keys['E'] || keys['Enter']) && this.item && this.itemRouletteTimer <= 0) this.useItem();
 
                 if (keys['ArrowUp'] || keys['w']) this.speed += currentAccel;
                 else if (keys['ArrowDown'] || keys['s']) this.speed -= this.braking;
@@ -1898,18 +2361,78 @@
                 if (Math.abs(this.speed) > 0.1) {
                     let dir = this.speed > 0 ? 1 : -1;
                     let turnRatio = Math.abs(this.speed) / currentMaxSpeed;
-                    if (keys['ArrowLeft'] || keys['a']) { this.angle -= this.turnSpeed * dir * turnRatio; isScreeching = turnRatio > 0.7; }
-                    if (keys['ArrowRight'] || keys['d']) { this.angle += this.turnSpeed * dir * turnRatio; isScreeching = turnRatio > 0.7; }
+                    let isTurning = false;
+                    let upgHand = this.isPlayer ? 1 + playerUpgrades.handling * 0.08 : 1;
+                    
+                    if (keys['ArrowLeft'] || keys['a']) { this.angle -= this.turnSpeed * dir * turnRatio * upgHand; isTurning = true; }
+                    if (keys['ArrowRight'] || keys['d']) { this.angle += this.turnSpeed * dir * turnRatio * upgHand; isTurning = true; }
+                    
+                    // Refined Drifting Logic
+                    let wantsToDrift = keys[' '];
+                    let canInitiateDrift = wantsToDrift && isTurning && this.speed > this.maxSpeed * 0.4 && this.onTrack;
+                    
+                    if ((this.isDrifting && wantsToDrift && this.onTrack && this.speed > this.maxSpeed * 0.3) || canInitiateDrift) {
+                        if (!this.isDrifting) {
+                            this.isDrifting = true;
+                            this.driftTimer = 0;
+                            this.driftDir = (keys['ArrowLeft'] || keys['a']) ? -1 : 1;
+                            if (this.jumpTimer <= 0) this.jumpTimer = 15; // Small hop into drift
+                        }
+                        this.driftTimer++;
+                        isScreeching = true;
+                        
+                        this.speed *= 0.995; // Slightly lose speed while drifting (more forgiving than before)
+                        
+                        // In a drift, the car naturally turns a bit in the drift direction
+                        this.angle += this.turnSpeed * this.driftDir * 0.4 * turnRatio;
+                        
+                        // If steering into the drift, turn even sharper
+                        if (this.driftDir === -1 && (keys['ArrowLeft'] || keys['a'])) this.angle -= this.turnSpeed * 0.6 * turnRatio;
+                        if (this.driftDir === 1 && (keys['ArrowRight'] || keys['d'])) this.angle += this.turnSpeed * 0.6 * turnRatio;
+                        
+                    } else {
+                        if (this.isDrifting) {
+                            // Release Drift = Mini Turbo!
+                            if (this.driftTimer > 120) { this.miniTurboTimer = 90; cameraShake = Math.max(cameraShake, 6); audio.playSynth('synthBass', 60, 0, 0.5, 0.4); } // Pink
+                            else if (this.driftTimer > 60) { this.miniTurboTimer = 50; cameraShake = Math.max(cameraShake, 4); audio.playSynth('synthBass', 55, 0, 0.3, 0.3); } // Orange
+                            else if (this.driftTimer > 25) { this.miniTurboTimer = 25; cameraShake = Math.max(cameraShake, 2); audio.playSynth('synthBass', 50, 0, 0.2, 0.2); } // Blue
+                        }
+                        this.isDrifting = false;
+                        this.driftTimer = 0;
+                    }
+                } else {
+                    this.isDrifting = false;
+                    this.driftTimer = 0;
                 }
 
                 audio.updateEngine(this.speed, true);
                 audio.setScreech((isScreeching || this.isOffRoad) && Math.abs(this.speed) > 3);
             }
 
+            
+            useItem() {
+                if (this.item === 'Missile') projectiles.push(new Projectile(this.x, this.y, this.angle, 'Missile', this));
+                else if (this.item === 'Laser') projectiles.push(new Projectile(this.x, this.y, this.angle, 'Laser', this));
+                else if (this.item === 'Mine') traps.push(new Trap(this.x, this.y, 'Mine', this));
+                else if (this.item === 'Shield') { this.shieldTimer = 300; if(this.isPlayer) audio.playSynth('trumpet', 72, Tone.now(), 0.5, 0.4); }
+                this.item = null;
+            }
             handleAI() {
                 let targetWP = activeWaypoints[this.aiTargetWaypoint];
                 let nextWP = activeWaypoints[(this.aiTargetWaypoint + 1) % activeWaypoints.length];
                 
+                if (this.item && this.itemRouletteTimer <= 0 && Math.random() < 0.01) this.useItem();
+                if (this.jumpTimer > 0) {
+                    this.jumpTimer--;
+                    this.onTrack = true; // Ignore offroad while jumping
+                }
+                
+                if (this.spinTimer > 0) {
+                    this.spinTimer--;
+                    this.angle += 0.3;
+                    this.targetAngle = this.angle;
+                }
+
                 // Wrong Way Detection & Correction
                 if (gameState === 'PLAYING') {
                     let trackAngle = Math.atan2(nextWP.y - targetWP.y, nextWP.x - targetWP.x);
@@ -2300,8 +2823,10 @@
             drawShadow(ctx) {
                 if (this.tier && this.tier.name === 'RIVAL') {
                     ctx.save();
-                    ctx.translate(this.x, this.y);
+                    let scale = this.jumpTimer > 0 ? 1 + Math.sin((this.jumpTimer/40)*Math.PI)*0.5 : 1;
+                    ctx.translate(this.x + 10 * scale, this.y + 10 * scale);
                     ctx.rotate(this.angle);
+                    ctx.scale(scale, scale);
                     ctx.shadowColor = '#ff0033';
                     ctx.shadowBlur = 20;
                     ctx.fillStyle = 'rgba(255, 0, 51, 0.4)';
@@ -2323,8 +2848,10 @@
 
             draw(ctx) {
                 ctx.save();
+                let scale = this.jumpTimer > 0 ? 1 + Math.sin((this.jumpTimer/40)*Math.PI)*0.5 : 1;
                 ctx.translate(this.x, this.y);
                 ctx.rotate(this.angle);
+                ctx.scale(scale, scale);
 
                 if (this.effect === 'Glow') {
                     ctx.shadowColor = this.color;
@@ -2337,6 +2864,11 @@
                     ctx.shadowBlur = 0;
                 }
 
+                if (this.shieldTimer > 0) {
+                    ctx.beginPath(); ctx.arc(0, 0, 40, 0, Math.PI*2);
+                    ctx.strokeStyle = `rgba(0, 243, 255, ${0.5 + Math.sin(Date.now()/100)*0.5})`;
+                    ctx.lineWidth = 4; ctx.stroke();
+                }
                 let grad = ctx.createLinearGradient(-this.height/2, -this.width/2, this.height/2, this.width/2);
                 grad.addColorStop(0, 'rgba(255,255,255,0.4)');
                 grad.addColorStop(0.5, 'rgba(255,255,255,0)');
@@ -2479,6 +3011,56 @@
             showScreen('map-select-menu');
         }
         
+        
+        function openUpgradeShop() {
+            showScreen('upgrade-shop-screen');
+            updateUpgradeShopUI();
+        }
+
+        function buyUpgrade(type) {
+            let costs = [50, 100, 200, 400, 800];
+            let level = playerUpgrades[type];
+            if (level >= 5) return;
+            let cost = costs[level];
+            if (playerCoins >= cost) {
+                playerCoins -= cost;
+                playerUpgrades[type]++;
+                localStorage.setItem('webRacers_coins', playerCoins);
+                localStorage.setItem('webRacers_upgrades', JSON.stringify(playerUpgrades));
+                updateUpgradeShopUI();
+                audio.playSynth('synthBass', 84, 0, 0.2, 0.4);
+            } else {
+                audio.playSynth('synthBass', 40, 0, 0.2, 0.5); // Error buzz
+            }
+        }
+
+        function updateUpgradeShopUI() {
+            let shopEl = document.getElementById('upgrade-shop-screen');
+            if(!shopEl) return;
+            let coinsEl = document.getElementById('shop-coins');
+            if(coinsEl) coinsEl.innerText = playerCoins;
+            
+            ['speed', 'accel', 'handling', 'nitro'].forEach(type => {
+                let level = playerUpgrades[type];
+                let costs = [50, 100, 200, 400, 800];
+                let costStr = level >= 5 ? 'MAX' : costs[level] + ' Coins';
+                let btn = document.getElementById('buy-' + type);
+                if(btn) {
+                    btn.innerText = 'Upgrade (' + costStr + ')';
+                    if(level >= 5 || playerCoins < costs[level]) btn.style.opacity = '0.5';
+                    else btn.style.opacity = '1';
+                }
+                
+                let bars = document.getElementById('bars-' + type);
+                if(bars) {
+                    bars.innerHTML = '';
+                    for(let i=0; i<5; i++) {
+                        bars.innerHTML += `<div style="width:20px;height:10px;margin-right:2px;display:inline-block;background:${i < level ? '#00f3ff' : '#333'};box-shadow:${i < level ? '0 0 5px #00f3ff' : 'none'}"></div>`;
+                    }
+                }
+            });
+        }
+
         function openMainMenu() {
             audio.startMusic('menu');
             gameState = 'MENU';
@@ -3257,6 +3839,34 @@
             // Draw Start/Finish Line
             ctx.save();
             let startLineAngle = Math.atan2(activeWaypoints[1].y - activeWaypoints[0].y, activeWaypoints[1].x - activeWaypoints[0].x);
+            
+            // Draw Map Features (Boosts, Ramps, Oil)
+            if (map.features) {
+                map.features.forEach(f => {
+                    ctx.save();
+                    ctx.translate(f.x, f.y);
+                    ctx.rotate(f.angle);
+                    if (f.type === 'boost') {
+                        ctx.fillStyle = '#ff00ea';
+                        ctx.beginPath(); ctx.moveTo(-40, -40); ctx.lineTo(40, 0); ctx.lineTo(-40, 40); ctx.fill();
+                        ctx.fillStyle = '#00f3ff';
+                        ctx.beginPath(); ctx.moveTo(-60, -40); ctx.lineTo(20, 0); ctx.lineTo(-60, 40); ctx.fill();
+                    } else if (f.type === 'ramp') {
+                        ctx.fillStyle = '#ff9900';
+                        ctx.fillRect(-50, -60, 100, 120);
+                        ctx.fillStyle = '#ffff00';
+                        ctx.fillRect(-30, -60, 60, 120);
+                        ctx.fillStyle = '#111';
+                        ctx.beginPath(); ctx.moveTo(-20, 40); ctx.lineTo(20, 40); ctx.lineTo(0, -40); ctx.fill(); // arrow
+                    } else if (f.type === 'oil') {
+                        ctx.fillStyle = '#111';
+                        ctx.beginPath(); ctx.arc(0, 0, 60, 0, Math.PI*2); ctx.fill();
+                        ctx.beginPath(); ctx.arc(30, 20, 40, 0, Math.PI*2); ctx.fill();
+                        ctx.beginPath(); ctx.arc(-20, -30, 50, 0, Math.PI*2); ctx.fill();
+                    }
+                    ctx.restore();
+                });
+            }
             ctx.translate(activeWaypoints[0].x, activeWaypoints[0].y);
             ctx.rotate(startLineAngle);
             
@@ -3310,6 +3920,8 @@
 
             // Draw Car Shadows FIRST
             let sortedCars = [...cars].sort((a,b)=>a.y - b.y);
+            coins.forEach(c => c.draw(ctx)); movingHazards.forEach(h => h.draw(ctx)); zoneHazards.forEach(z => z.draw(ctx));
+            itemBoxes.forEach(b => b.draw(ctx)); projectiles.forEach(p => p.draw(ctx)); traps.forEach(t => t.draw(ctx));
             sortedCars.forEach(car => car.drawShadow(ctx));
             
             // Draw Car Bodies
@@ -3439,6 +4051,52 @@
             ctx.restore();
         }
 
+        
+        function updateItems() {
+            coins.forEach(c => {
+                c.update();
+                cars.forEach(car => {
+                    if (c.active && !car.isRemote && dist2(car, c) < 900) {
+                        c.active = false;
+                        if (car.isPlayer && raceCoins < 10) {
+                            raceCoins++; playerCoins++;
+                            localStorage.setItem('webRacers_coins', playerCoins);
+                            let coinEl = document.getElementById('coin-val');
+                            if(coinEl) coinEl.innerText = raceCoins;
+                            audio.playSynth('piano', 84, Tone.now(), 0.1, 0.4);
+                            audio.playSynth('piano', 88, Tone.now()+0.1, 0.2, 0.4);
+                        }
+                    }
+                });
+            });
+            movingHazards.forEach(h => h.update()); zoneHazards.forEach(z => z.update());
+            itemBoxes.forEach(b => b.update());
+            projectiles.forEach(p => p.update());
+            projectiles = projectiles.filter(p => p.life > 0);
+            traps.forEach(t => t.update());
+            traps = traps.filter(t => t.life > 0);
+
+            cars.forEach(car => {
+                if (car.itemRouletteTimer > 0) {
+                    car.itemRouletteTimer--;
+                    if (car.itemRouletteTimer <= 0) {
+                        const items = ['Missile', 'Laser', 'Mine', 'Shield'];
+                        car.item = items[Math.floor(Math.random() * items.length)];
+                        if (car.isPlayer) audio.beep();
+                    }
+                }
+                if (car.shieldTimer > 0) car.shieldTimer--;
+
+                if (!car.item && car.itemRouletteTimer <= 0) {
+                    itemBoxes.forEach(b => {
+                        if (b.active && dist2(car, b) < 2500) {
+                            b.active = false; b.respawnTimer = 300; car.itemRouletteTimer = 60;
+                            if (car.isPlayer) audio.playSynth('trumpet', 80, Tone.now(), 0.1, 0.4);
+                        }
+                    });
+                }
+            });
+        }
         function updateHUD() {
             if (gameState === 'PLAYING' || gameState === 'FINISHED') {
                 let displaySpeed = Math.abs(Math.round(player.speed * 12)); 
@@ -3684,6 +4342,7 @@
 
                 if (gameState === 'PLAYING' || gameState === 'FINISHED') {
                     fx.update();
+                    updateItems();
                     cars.forEach(car => car.update(keys));
                     
                     if (gameMode === 'MULTIPLAYER' && gameState === 'PLAYING') {
@@ -3771,6 +4430,23 @@
                     }
 
                     if(gameState === 'PLAYING' || gameState === 'FINISHED' || gameState === 'COUNTDOWN') drawMinimap();
+                    
+                    if (gameState === 'PLAYING' && player) {
+                        ctx.save(); ctx.setTransform(1,0,0,1,0,0);
+                        let cx = canvas.width - 80, cy = 80;
+                        ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
+                        ctx.beginPath(); ctx.roundRect(cx - 40, cy - 40, 80, 80, 10); ctx.fill(); ctx.stroke();
+                        
+                        if (player.itemRouletteTimer > 0) {
+                            ctx.fillStyle = '#ff00ea'; ctx.font = 'bold 40px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                            let items = ['?', '!', '*', '#'];
+                            ctx.fillText(items[Math.floor(Date.now() / 50) % items.length], cx, cy);
+                        } else if (player.item) {
+                            ctx.fillStyle = '#00f3ff'; ctx.font = 'bold 16px Orbitron'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                            ctx.fillText(player.item, cx, cy);
+                        }
+                        ctx.restore();
+                    }
                     updateHUD();
 
                     if (gameState === 'FINISHED') {
@@ -3814,6 +4490,40 @@
                 generateSpeedLines();
                 audio.startMusic('menu');
             });
+        });
+
+        // Add Chrome Extension CSP workaround for inline onclicks
+        document.addEventListener('click', (e) => {
+            let btn = e.target.closest('[data-onclick]');
+            if (!btn) return;
+            
+            let clickStr = btn.getAttribute('data-onclick');
+            let match = clickStr.match(/^([a-zA-Z0-9_.]+)\((.*)\)$/);
+            if (match) {
+                let funcName = match[1];
+                let rawArgs = match[2] ? match[2].split(',').map(s => s.trim()) : [];
+                let args = rawArgs.map(arg => {
+                    if (!arg) return undefined;
+                    if (arg === 'this') return btn;
+                    if (arg === 'currentMapIndex') return currentMapIndex;
+                    if (arg.startsWith("'") && arg.endsWith("'")) return arg.slice(1, -1);
+                    if (!isNaN(arg) && arg !== '') return Number(arg);
+                    return arg;
+                }).filter(a => a !== undefined);
+                
+                let funcObj = window;
+                let parts = funcName.split('.');
+                for(let i = 0; i < parts.length - 1; i++) {
+                    if (funcObj) funcObj = funcObj[parts[i]];
+                }
+                let method = parts[parts.length - 1];
+                
+                if (funcObj && typeof funcObj[method] === 'function') {
+                    funcObj[method].apply(funcObj, args);
+                } else {
+                    console.error('Function not found for data-onclick:', funcName);
+                }
+            }
         });
 
         requestAnimationFrame(gameLoop);
