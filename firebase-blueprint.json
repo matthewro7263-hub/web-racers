@@ -1,0 +1,46 @@
+{
+  "entities": {
+    "Session": {
+      "title": "Multiplayer Session",
+      "description": "A racing session for multiple players",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "Join code" },
+        "hostId": { "type": "string", "description": "UID of the host" },
+        "status": { "type": "string", "enum": ["waiting", "starting", "racing", "finished"] },
+        "trackId": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "hostId", "status"]
+    },
+    "Player": {
+      "title": "Player State",
+      "description": "State of a player in a session",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "color": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "angle": { "type": "number" },
+        "speed": { "type": "number" },
+        "lap": { "type": "number" },
+        "distanceDriven": { "type": "number" },
+        "isFinished": { "type": "boolean" },
+        "lastUpdate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "x", "y", "angle"]
+    }
+  },
+  "firestore": {
+    "/sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "Active multiplayer sessions"
+    },
+    "/sessions/{sessionId}/players/{playerId}": {
+      "schema": "Player",
+      "description": "Players in a session"
+    }
+  }
+}
