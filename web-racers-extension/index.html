@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WEB RACERS</title>
+    <script src="lib/Tone.js"></script>
+    <script type="module" src="firebase-init.js"></script>
+    <script defer src="game.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;900&family=Orbitron:wght@400;700;900&display=swap');
+
+        :root {
+            --neon-blue: #00f3ff;
+            --neon-pink: #ff00ea;
+            --neon-green: #39ff14;
+            --neon-yellow: #fbc531;
+            --bg-dark: #0a0a0f;
+            --glass-bg: rgba(10, 10, 15, 0.85);
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-dark);
+            font-family: 'Orbitron', sans-serif;
+            touch-action: none;
+            color: white;
+        }
+        
+        #gameCanvas {
+            display: block;
+        }
+
+        /* Animated Grid Background for Menus */
+        .grid-bg {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-size: 100px 100px;
+            background-image: 
+                linear-gradient(to right, rgba(0, 243, 255, 0.1) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(0, 243, 255, 0.1) 1px, transparent 1px);
+            animation: gridScroll 10s linear infinite;
+            z-index: 0;
+        }
+
+        @keyframes gridScroll {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(100px); }
+        }
+
+        /* Menus & UI */
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .hud-box {
+            position: absolute;
+            background: var(--glass-bg);
+            padding: 15px 25px;
+            border-radius: 8px;
+            border: 1px solid var(--neon-blue);
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.3), inset 0 0 10px rgba(0, 243, 255, 0.1);
+            backdrop-filter: blur(5px);
+            text-transform: uppercase;
+        }
+
+        #speedometer { 
+            bottom: 25px; 
+            right: 25px; 
+            text-align: right; 
+            width: 170px; 
+            font-size: 18px; 
+            box-sizing: border-box; 
+        }
+        #speed-val { 
+            font-size: 42px; 
+            color: var(--neon-blue); 
+            text-shadow: 0 0 10px var(--neon-blue); 
+            display: block; 
+            width: 100%;
+            margin-top: 5px;
+            text-align: right;
+        }
+        
+        #nitro-container {
+            margin-top: 15px;
+            text-align: right;
+        }
+        #nitro-label {
+            font-size: 14px;
+            font-weight: 900;
+            color: white;
+            margin-bottom: 5px;
+            display: block;
+        }
+        #nitro-bar-bg {
+            width: 120px;
+            height: 14px;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid #444;
+            border-radius: 4px;
+            float: right;
+            overflow: hidden;
+            position: relative;
+        }
+        #nitro-bar-fill {
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(90deg, #fbc531, #e67e22);
+            transition: width 0.1s linear;
+        }
+        #nitro-bar-fill.low {
+            background: linear-gradient(90deg, #e74c3c, #c0392b);
+            animation: flashLow 0.5s infinite alternate;
+        }
+        #nitro-bar-fill.active-glow {
+            box-shadow: 0 0 10px 2px #ff9900;
+            background: linear-gradient(90deg, #ff9900, #ffcc00);
+        }
+        
+        @keyframes flashLow {
+            0% { opacity: 1; }
+            100% { opacity: 0.3; }
+        }
+        
+        #race-stats { top: 30px; left: 30px; font-size: 18px; }
+        .stat-row { margin-bottom: 8px; color: #aaa; }
+        .stat-val { color: var(--neon-yellow); font-size: 24px; margin-left: 10px; text-shadow: 0 0 8px rgba(251, 197, 49, 0.5); }
+
+        #position-list {
+            position: absolute;
+            top: 200px;
+            right: 25px;
+            width: 150px;
+            max-height: calc(100% - 250px);
+            overflow-y: auto;
+            background: rgba(0,0,0,0.6);
+            border: 1px solid var(--neon-blue);
+            border-radius: 8px;
+            padding: 10px;
+            pointer-events: none;
+            scrollbar-width: none;
+        }
+        #position-list::-webkit-scrollbar { display: none; }
+        .pos-item {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .pos-you { color: var(--neon-blue); text-shadow: 0 0 5px var(--neon-blue); }
+        .pos-rival { color: #ff0033; text-shadow: 0 0 5px #ff0033; }
+        .pos-normal { color: white; }
+
+        #best-lap-banner {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ffd700;
+            font-size: 24px;
+            font-weight: 900;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 15px 40px;
+            border: 2px solid #ffd700;
+            border-radius: 12px;
+            z-index: 100;
+            text-transform: uppercase;
+            animation: goldShimmer 0.5s infinite alternate;
+            pointer-events: none;
+        }
+        #best-lap-banner-time {
+            display: block;
+            font-size: 36px;
+            color: #fff;
+            text-shadow: 0 0 10px #ffd700;
+            margin-top: 5px;
+        }
+        @keyframes goldShimmer {
+            0% { box-shadow: 0 0 10px #ffd700, inset 0 0 10px #ffd700; text-shadow: 0 0 10px #ffd700; }
+            100% { box-shadow: 0 0 30px #ffd700, inset 0 0 20px #ffd700; text-shadow: 0 0 20px #ffffff, 0 0 30px #ffd700; }
+        }
+
+        #pause-btn-ui {
+            position: absolute; top: 30px; right: 30px;
+            pointer-events: auto; background: var(--glass-bg);
+            border: 1px solid var(--neon-pink); color: var(--neon-pink);
+            width: 50px; height: 50px; font-size: 24px; border-radius: 8px;
+            cursor: pointer; box-shadow: 0 0 10px rgba(255, 0, 234, 0.3);
+            transition: all 0.2s;
+            display: flex; justify-content: center; align-items: center;
+        }
+        #pause-btn-ui:hover { background: var(--neon-pink); color: white; box-shadow: 0 0 20px var(--neon-pink); }
+        
+        #mute-btn-ui {
+            position: absolute; top: 30px; right: 95px;
+            pointer-events: auto; background: var(--glass-bg);
+            border: 1px solid var(--neon-blue); color: var(--neon-blue);
+            width: 50px; height: 50px; font-size: 24px; border-radius: 8px;
+            cursor: pointer; box-shadow: 0 0 10px rgba(0, 243, 255, 0.3);
+            transition: all 0.2s;
+            display: flex; justify-content: center; align-items: center;
+            z-index: 100;
+        }
+        #mute-btn-ui:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 20px var(--neon-blue); }
+
+        #minimap-btn-ui {
+            position: absolute; top: 90px; right: 30px;
+            pointer-events: auto; background: var(--glass-bg);
+            border: 1px solid var(--neon-green); color: var(--neon-green);
+            width: 50px; height: 50px; font-size: 24px; border-radius: 8px;
+            cursor: pointer; box-shadow: 0 0 10px rgba(57, 255, 20, 0.3);
+            transition: all 0.2s;
+            display: flex; justify-content: center; align-items: center;
+            z-index: 100;
+        }
+        #minimap-btn-ui:hover { background: var(--neon-green); color: #000; box-shadow: 0 0 20px var(--neon-green); }
+
+        #weather-icon {
+            position: absolute;
+            top: 30px;
+            right: 160px;
+            font-size: 32px;
+            pointer-events: none;
+            z-index: 10;
+            filter: drop-shadow(0 0 5px rgba(0, 243, 255, 0.5));
+        }
+
+        #screens {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center;
+            background: radial-gradient(circle at center, rgba(10,10,15,0.7) 0%, rgba(0,0,0,0.9) 100%);
+            backdrop-filter: blur(8px);
+            pointer-events: auto; z-index: 10;
+        }
+
+        .screen-panel {
+            background: var(--glass-bg);
+            padding: 40px; border-radius: 15px;
+            border: 2px solid var(--neon-blue);
+            box-shadow: 0 0 30px rgba(0, 243, 255, 0.2), inset 0 0 20px rgba(0, 243, 255, 0.1);
+            text-align: center; max-width: 800px; width: 90%;
+            position: relative; z-index: 1;
+        }
+
+        h1.title {
+            font-size: 60px; font-weight: 900; margin-top: 0; margin-bottom: 30px;
+            color: #fff; text-transform: uppercase; font-style: italic;
+            text-shadow: 0 0 10px var(--neon-pink), 0 0 20px var(--neon-pink), 0 0 40px var(--neon-pink);
+            animation: pulseText 2s infinite alternate;
+        }
+
+        @keyframes pulseText {
+            0% { text-shadow: 0 0 10px var(--neon-pink), 0 0 20px var(--neon-pink), 0 0 40px var(--neon-pink); }
+            100% { text-shadow: 0 0 15px var(--neon-pink), 0 0 30px var(--neon-pink), 0 0 60px var(--neon-pink); }
+        }
+
+        /* ---- ICONIC MAIN MENU ---- */
+        #main-menu {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            max-width: 100vw !important;
+            width: 100% !important;
+            padding: 0 !important;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .menu-bg-effects {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .speed-line {
+            position: absolute;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--neon-blue), transparent);
+            opacity: 0;
+            animation: speedLineMove 2.5s linear infinite;
+        }
+
+        @keyframes speedLineMove {
+            0% { transform: translateX(-100vw); opacity: 0; }
+            10% { opacity: 0.6; }
+            90% { opacity: 0.6; }
+            100% { transform: translateX(100vw); opacity: 0; }
+        }
+
+        .menu-logo {
+            position: relative;
+            margin-bottom: 10px;
+            z-index: 2;
+        }
+
+        .menu-logo-web {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--neon-blue);
+            text-transform: uppercase;
+            letter-spacing: 18px;
+            margin-bottom: -10px;
+            text-shadow: 0 0 15px var(--neon-blue);
+            animation: logoGlow 3s ease-in-out infinite alternate;
+        }
+
+        .menu-logo-racers {
+            font-family: 'Fredoka One', cursive;
+            font-size: 96px;
+            font-weight: 900;
+            color: #fff;
+            text-transform: uppercase;
+            letter-spacing: 6px;
+            line-height: 1;
+            background: linear-gradient(180deg, #ffffff 0%, #ff00ea 50%, #ff0066 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 0 20px rgba(255, 0, 234, 0.6)) drop-shadow(0 4px 0 rgba(0,0,0,0.4));
+            animation: logoFloat 4s ease-in-out infinite;
+        }
+
+        @keyframes logoGlow {
+            0% { text-shadow: 0 0 10px var(--neon-blue), 0 0 20px var(--neon-blue); opacity: 0.8; }
+            100% { text-shadow: 0 0 20px var(--neon-blue), 0 0 40px var(--neon-blue), 0 0 60px var(--neon-blue); opacity: 1; }
+        }
+
+        @keyframes logoFloat {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+
+        .menu-logo-underline {
+            width: 320px;
+            height: 3px;
+            margin: 8px auto 0;
+            background: linear-gradient(90deg, transparent, var(--neon-pink), var(--neon-blue), transparent);
+            border-radius: 2px;
+            animation: underlineShimmer 3s ease-in-out infinite;
+        }
+
+        @keyframes underlineShimmer {
+            0%, 100% { opacity: 0.6; width: 280px; }
+            50% { opacity: 1; width: 360px; }
+        }
+
+        .menu-tagline {
+            font-family: 'Nunito', sans-serif;
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.4);
+            letter-spacing: 6px;
+            text-transform: uppercase;
+            margin-top: 12px;
+            margin-bottom: 40px;
+        }
+
+        .menu-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 340px;
+            z-index: 2;
+        }
+
+        .menu-btn {
+            position: relative;
+            background: rgba(10, 10, 30, 0.6);
+            color: #fff;
+            border: 1px solid rgba(0, 243, 255, 0.3);
+            padding: 16px 30px;
+            font-size: 18px;
+            font-weight: 700;
+            font-family: 'Orbitron', sans-serif;
+            border-radius: 8px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            transition: all 0.25s ease;
+            backdrop-filter: blur(10px);
+            overflow: hidden;
+        }
+
+        .menu-btn::before {
+            content: '';
+            position: absolute;
+            top: 0; left: -100%;
+            width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 243, 255, 0.1), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .menu-btn:hover::before {
+            left: 100%;
+        }
+
+        .menu-btn:hover {
+            background: rgba(0, 243, 255, 0.15);
+            border-color: var(--neon-blue);
+            box-shadow: 0 0 25px rgba(0, 243, 255, 0.3), inset 0 0 15px rgba(0, 243, 255, 0.1);
+            transform: translateX(8px);
+            letter-spacing: 5px;
+        }
+
+        .menu-btn.primary {
+            background: linear-gradient(135deg, rgba(0, 243, 255, 0.2), rgba(255, 0, 234, 0.15));
+            border-color: var(--neon-blue);
+            font-size: 20px;
+            padding: 18px 30px;
+        }
+
+        .menu-btn.primary:hover {
+            background: linear-gradient(135deg, rgba(0, 243, 255, 0.35), rgba(255, 0, 234, 0.25));
+            box-shadow: 0 0 30px rgba(0, 243, 255, 0.4), 0 0 60px rgba(255, 0, 234, 0.2);
+        }
+
+        .menu-btn.secondary {
+            border-color: rgba(255, 0, 234, 0.3);
+        }
+
+        .menu-btn.secondary:hover {
+            border-color: var(--neon-pink);
+            background: rgba(255, 0, 234, 0.15);
+            box-shadow: 0 0 25px rgba(255, 0, 234, 0.3);
+        }
+
+        .menu-version {
+            position: absolute;
+            bottom: 20px;
+            right: 30px;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.15);
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 2px;
+        }
+
+        .btn-neon {
+            background: transparent; color: var(--neon-blue);
+            border: 2px solid var(--neon-blue); padding: 15px 40px;
+            font-size: 20px; font-weight: bold; font-family: 'Orbitron', sans-serif;
+            border-radius: 5px; cursor: pointer; text-transform: uppercase;
+            transition: all 0.3s; margin: 10px;
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.2), inset 0 0 10px rgba(0, 243, 255, 0.1);
+        }
+
+        .btn-neon:hover, .btn-neon.active {
+            background: var(--neon-blue); color: #000;
+            box-shadow: 0 0 20px var(--neon-blue), inset 0 0 10px rgba(255, 255, 255, 0.5);
+            text-shadow: none;
+        }
+
+        .btn-neon.pink { border-color: var(--neon-pink); color: var(--neon-pink); box-shadow: 0 0 10px rgba(255, 0, 234, 0.2); }
+        .btn-neon.pink:hover { background: var(--neon-pink); color: #000; box-shadow: 0 0 20px var(--neon-pink); }
+
+        /* Car & Setup Selection Grid */
+        .car-grid {
+            display: flex; justify-content: center; gap: 15px; margin: 20px 0; flex-wrap: wrap;
+        }
+        .car-card {
+            background: rgba(0,0,0,0.6); border: 2px solid #444; border-radius: 8px;
+            padding: 15px; cursor: pointer; transition: all 0.2s; width: 140px;
+        }
+        .car-card:hover { border-color: var(--neon-blue); box-shadow: 0 0 15px rgba(0, 243, 255, 0.4); transform: translateY(-5px); }
+        .car-card.active { border-color: var(--neon-blue); box-shadow: 0 0 20px rgba(0, 243, 255, 0.8); background: rgba(0, 243, 255, 0.1); }
+        .car-preview { width: 100%; height: 80px; display: flex; justify-content: center; align-items: center; margin-bottom: 10px; }
+        .car-name-label { font-size: 14px; font-weight: bold; color: white; margin-bottom: 10px; text-transform: uppercase; }
+        
+        .stat-container { display: flex; align-items: center; margin-bottom: 6px; font-size: 10px; color: #ccc; font-weight: bold; }
+        .stat-label { width: 45px; text-align: left; }
+        .stat-bar-bg { flex-grow: 1; height: 8px; background: #333; border-radius: 4px; overflow: hidden; display: flex; gap: 1px; }
+        .stat-segment { height: 100%; flex: 1; background: transparent; transition: background 0.2s; }
+
+        /* Map Selection Grid */
+        .map-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 15px; margin-top: 20px; max-height: 40vh; overflow-y: auto; padding: 10px;
+        }
+        
+        /* Custom Scrollbar */
+        .map-grid::-webkit-scrollbar, #position-list::-webkit-scrollbar { width: 8px; }
+        .map-grid::-webkit-scrollbar-track, #position-list::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); }
+        .map-grid::-webkit-scrollbar-thumb, #position-list::-webkit-scrollbar-thumb { background: var(--neon-blue); border-radius: 4px; }
+
+        .map-card {
+            background: rgba(0,0,0,0.6); border: 1px solid #444; border-radius: 8px;
+            padding: 10px; cursor: pointer; transition: all 0.2s;
+        }
+        .map-card:hover { border-color: var(--neon-blue); box-shadow: 0 0 15px rgba(0, 243, 255, 0.4); transform: translateY(-5px); }
+        .map-canvas { width: 100%; height: 100px; background: #222; border-radius: 4px; margin-bottom: 8px; }
+        .map-name { font-size: 12px; font-weight: bold; color: #ddd; }
+
+        /* Settings Group */
+        .settings-group { margin: 25px 0; text-align: left; }
+        .settings-label { color: var(--neon-pink); font-size: 18px; margin-bottom: 10px; display: block; }
+        .settings-options { display: flex; gap: 10px; justify-content: center; }
+
+        /* Podium */
+        .podium { display: flex; justify-content: center; align-items: flex-end; gap: 15px; margin: 30px 0; height: 180px;}
+        .podium-step { background: rgba(0, 243, 255, 0.1); border: 2px solid var(--neon-blue); border-bottom: none; width: 100px; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; padding-top: 15px; font-size: 24px; font-weight: bold;}
+        .podium-1 { height: 150px; border-color: #ffd700; background: rgba(255, 215, 0, 0.1); color: #ffd700; }
+        .podium-2 { height: 110px; border-color: #c0c0c0; background: rgba(192, 192, 192, 0.1); color: #c0c0c0; }
+        .podium-3 { height: 80px; border-color: #cd7f32; background: rgba(205, 127, 50, 0.1); color: #cd7f32; }
+        .car-name { font-size: 14px; margin-top: 10px; color: white;}
+
+        /* Fall Guys Loading Screen Styling */
+        .fall-guys-loading {
+            background: repeating-radial-gradient(circle at center, rgba(255,255,255,0.15) 0, rgba(255,255,255,0.15) 30px, transparent 30px, transparent 60px), linear-gradient(135deg, #a1ebff, #b5f5e8);
+            border: none;
+            box-shadow: inset 0 0 60px rgba(255,255,255,0.6), 0 20px 50px rgba(0,0,0,0.5);
+            border-radius: 30px;
+            padding: 0 !important;
+            overflow: hidden;
+            display: flex; flex-direction: column; justify-content: space-between;
+            font-family: 'Nunito', sans-serif;
+            max-width: 900px; width: 90%; height: 600px;
+        }
+        .fg-top-bar { display: flex; justify-content: space-between; padding: 30px 40px; align-items: center;}
+        .fg-pill {
+            padding: 12px 30px; border-radius: 50px; font-family: 'Fredoka One', cursive;
+            font-size: 32px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px;
+            box-shadow: 0 8px 0 rgba(0,0,0,0.15), inset 0 -4px 0 rgba(0,0,0,0.1);
+            color: white; text-shadow: 2px 2px 0 rgba(0,0,0,0.2);
+            border: 5px solid white; line-height: 1;
+        }
+        .fg-pink { background-color: #ff3399; }
+        .fg-green { background-color: #33cc66; font-size: 24px; padding: 10px 20px;}
+        .fg-content { display: flex; padding: 0 40px; gap: 40px; align-items: center; flex: 1; }
+        .fg-tv-frame {
+            border: 14px solid white; border-radius: 35px; overflow: hidden;
+            box-shadow: 0 15px 25px rgba(0,0,0,0.25), inset 0 8px 20px rgba(0,0,0,0.4);
+            background: #111; width: 420px; height: 300px; flex-shrink: 0;
+            position: relative;
+        }
+        .fg-how-to-play { text-align: left; color: #222; font-size: 24px; font-weight: 900; }
+        .fg-how-to-play h2 { 
+            font-family: 'Fredoka One', cursive; font-size: 42px; color: #ff3399; 
+            margin-top: 0; margin-bottom: 20px; text-shadow: 2px 2px 0px white, -2px -2px 0px white, 2px -2px 0px white, -2px 2px 0px white; 
+            text-decoration: underline 6px solid white; text-underline-offset: 10px;
+        }
+        .fg-how-to-play ul { list-style: none; padding: 0; margin: 0; }
+        .fg-how-to-play li { margin-bottom: 20px; position: relative; padding-left: 35px; text-shadow: 1px 1px 0 rgba(255,255,255,0.5);}
+        .fg-how-to-play li::before { content: '⭐'; position: absolute; left: 0; color: #fbc531; font-size: 24px; filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.2)); }
+        .fg-bottom-bar {
+            background: #1a1a2e; color: white; font-family: 'Fredoka One', cursive;
+            font-size: 24px; padding: 25px 40px; text-align: center;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.4);
+            display: flex; flex-direction: column; gap: 15px;
+        }
+        .fg-progress-container { width: 100%; background: #0a0a15; height: 20px; border-radius: 12px; overflow: hidden; border: 3px solid #333; box-shadow: inset 0 5px 10px rgba(0,0,0,0.5);}
+        .fg-progress-fill { background: #ff3399; height: 100%; width: 0%; box-shadow: inset 0 6px 0 rgba(255,255,255,0.3); transition: width 0.1s linear; }
+
+        /* Elimination Screen */
+        #elimination-screen { display: flex; flex-direction: column; gap: 20px; }
+        .elim-item { font-size: 16px; margin-bottom: 8px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pos-adv { color: var(--neon-green); }
+        .pos-elim { color: #ff3333; opacity: 0.7; }
+
+        /* Countdown Animations */
+        #countdown {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            display: none; justify-content: center; align-items: center;
+            z-index: 50;
+        }
+        #countdown span {
+            display: flex; justify-content: center; align-items: center;
+            background: rgba(0,0,0,0.7);
+            border-radius: 50%;
+            width: 250px; height: 250px;
+            font-size: 120px; font-weight: 900; font-style: italic;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+        }
+        .count-3 span { color: #ff3333; text-shadow: 0 0 20px #ff3333; animation: pulseCountdown 0.9s forwards; }
+        .count-2 span { color: #ff9933; text-shadow: 0 0 20px #ff9933; animation: pulseCountdown 0.9s forwards; }
+        .count-1 span { color: #ffff33; text-shadow: 0 0 20px #ffff33; animation: pulseCountdown 0.9s forwards; }
+        .count-go span { 
+            color: #39ff14; text-shadow: 0 0 40px #39ff14; font-size: 150px; 
+            background: transparent !important; box-shadow: none !important;
+            animation: flashGo 0.9s forwards; 
+        }
+
+        @keyframes pulseCountdown {
+            0% { transform: scale(0.5); opacity: 0; }
+            30% { transform: scale(1.2); opacity: 1; }
+            70% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0.8); opacity: 0; }
+        }
+        @keyframes flashGo {
+            0% { transform: scale(0.5); opacity: 0; }
+            20% { transform: scale(1.5); opacity: 1; text-shadow: 0 0 80px #39ff14, 0 0 120px #ffffff; }
+            80% { transform: scale(1); opacity: 1; text-shadow: 0 0 40px #39ff14; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+
+        #offroad-warning {
+            position: absolute;
+            top: 15%;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #ff0033;
+            font-size: 64px;
+            font-weight: 900;
+            font-style: italic;
+            text-shadow: 0 0 20px #ff0000, 0 0 40px #ff0000;
+            animation: flashWarning 0.4s infinite alternate;
+            pointer-events: none;
+            z-index: 50;
+            letter-spacing: 5px;
+            text-transform: uppercase;
+        }
+
+        @keyframes flashWarning {
+            0% { opacity: 1; transform: translateX(-50%) scale(1); }
+            100% { opacity: 0.3; transform: translateX(-50%) scale(1.1); }
+        }
+
+        .hidden { display: none !important; }
+
+        /* D-PAD Controls */
+        #touch-controls {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: auto;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .dpad-row { display: flex; gap: 10px; }
+        .dpad-btn {
+            width: 70px; height: 70px; background: rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(0, 243, 255, 0.5); border-radius: 10px;
+            color: var(--neon-blue); font-size: 28px; display: flex; justify-content: center; align-items: center;
+            cursor: pointer; transition: all 0.1s; backdrop-filter: blur(5px);
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .dpad-btn:active, .dpad-btn.active { background: rgba(0, 243, 255, 0.3); border-color: var(--neon-blue); box-shadow: 0 0 15px rgba(0, 243, 255, 0.5); }
+        
+        .dpad-btn.nitro-btn {
+            background: rgba(230, 126, 34, 0.5);
+            border-color: #fbc531;
+            color: #fbc531;
+            font-size: 18px;
+            font-weight: 900;
+            width: 70px;
+        }
+        .dpad-btn.nitro-btn:active, .dpad-btn.nitro-btn.active {
+            background: rgba(230, 126, 34, 0.8);
+            border-color: #fff;
+            color: #fff;
+            box-shadow: 0 0 15px rgba(251, 197, 49, 0.8);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="countdown"></div>
+    
+    <!-- ON-SCREEN OFF-ROAD WARNING INDICATOR -->
+    <div id="offroad-warning" class="hidden">OFF-ROAD</div>
+
+    <div id="ui-layer" class="hidden">
+        
+        <div id="race-end-timer" class="hidden" style="position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); border: 2px solid var(--neon-pink); padding: 10px 20px; border-radius: 10px; color: white; font-family: 'Orbitron', sans-serif; font-size: 24px; text-align: center; z-index: 100;">
+            RACE ENDS IN: <span id="race-end-time-val" style="color: var(--neon-yellow);">60</span>
+            <div style="font-size: 14px; color: #aaa; margin-top: 5px;">Press Q/E to Spectate</div>
+        </div>
+
+        <div id="best-lap-banner" class="hidden">
+            NEW BEST LAP!<br>
+            <span id="best-lap-banner-time">00:00.00</span>
+        </div>
+        
+        <div id="weather-icon" class="hidden">💧</div>
+
+        <div id="race-stats" class="hud-box">
+            <div class="stat-row">LAP: <span id="lap-val" class="stat-val">1 / 3</span></div>
+            <div class="stat-row">TIME: <span id="time-val" class="stat-val">00:00.00</span></div>
+            <div class="stat-row">BEST: <span id="best-lap-val" class="stat-val">--:--.--</span></div>
+            <div class="stat-row">POS: <span id="pos-val" class="stat-val">1st</span></div>
+        </div>
+        
+        <div id="position-list">
+            <!-- Position list updated via JS -->
+        </div>
+
+        <div id="speedometer" class="hud-box">
+            KM/H
+            <span id="speed-val">0</span>
+            <div id="nitro-container">
+                <span id="nitro-label">NOS</span>
+                <div id="nitro-bar-bg">
+                    <div id="nitro-bar-fill"></div>
+                </div>
+            </div>
+        </div>
+        <button id="pause-btn-ui">❚❚</button>
+        <button id="mute-btn-ui">🔊</button>
+        <button id="minimap-btn-ui">🗺️</button>
+
+        <div id="touch-controls">
+            <div class="dpad-row">
+                <div style="width: 70px;"></div> <!-- Spacer to keep UP centered -->
+                <button class="dpad-btn" id="btn-up">▲</button>
+                <button class="dpad-btn nitro-btn" id="btn-nitro">NOS</button>
+            </div>
+            <div class="dpad-row">
+                <button class="dpad-btn" id="btn-left">◀</button>
+                <button class="dpad-btn" id="btn-down">▼</button>
+                <button class="dpad-btn" id="btn-right">▶</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="screens">
+        <div class="grid-bg"></div>
+
+        <!-- ASSET LOADING SCREEN -->
+        <div id="asset-loading-screen" class="screen-panel fall-guys-loading" style="display: flex; position: absolute; z-index: 999; top: 50%; left: 50%; transform: translate(-50%, -50%);">
+            <div class="fg-top-bar" style="justify-content: center;">
+                <div class="fg-pill fg-pink">WEB RACERS</div>
+            </div>
+            <div class="fg-content" style="flex-direction: column; justify-content: center; text-align: center;">
+                <button id="start-loading-btn" class="btn-neon" style="font-size: 30px; padding: 20px 50px;">CLICK TO START</button>
+                <div id="loading-status-text" style="font-family: 'Fredoka One', cursive; font-size: 28px; color: white; display: none;">Initializing Audio Engine...</div>
+            </div>
+            <div class="fg-bottom-bar" id="asset-bottom-bar" style="display: none;">
+                <span id="asset-bottom-text">SYNTHESIZING INSTRUMENTS...</span>
+                <div class="fg-progress-container">
+                    <div id="asset-bar-fill" class="fg-progress-fill"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MAIN MENU -->
+        <div id="main-menu" class="screen-panel hidden">
+            <div class="menu-bg-effects" id="menu-speed-lines"></div>
+
+            <div class="menu-logo">
+                <div class="menu-logo-web">Web</div>
+                <div class="menu-logo-racers">RACERS</div>
+                <div class="menu-logo-underline"></div>
+                <div class="menu-tagline">Burn rubber. Leave them behind.</div>
+            </div>
+
+            <div class="menu-buttons">
+                <button class="menu-btn primary" onclick="openQuickRace()">Quick Race</button>
+                <button class="menu-btn" onclick="openKnockoutCup()">Knockout Cup</button>
+                <button class="menu-btn" onclick="openMultiplayerMenu()">Multiplayer</button>
+                <button class="menu-btn" onclick="openMusicPlayer()">Music Player</button>
+                <button class="menu-btn secondary" onclick="openSettings()">Settings</button>
+            </div>
+
+            <div class="menu-version">v1.0</div>
+        </div>
+
+        <!-- MULTIPLAYER MENU -->
+        <div id="multiplayer-menu" class="screen-panel hidden">
+            <h2 style="color: var(--neon-blue); font-size: 32px; margin-top:0;">MULTIPLAYER</h2>
+            
+            <div id="multiplayer-auth-section" style="margin-bottom: 20px;">
+                <button id="login-btn" class="btn-neon" onclick="loginWithGoogle()">Login with Google to Play Online</button>
+                <div id="user-info" class="hidden" style="color: var(--neon-yellow); font-family: 'Orbitron'; margin-bottom: 10px;">
+                    Logged in as: <span id="user-display-name">---</span>
+                </div>
+            </div>
+
+            <div id="multiplayer-actions" class="hidden" style="display: flex; flex-direction: column; gap: 20px; width: 300px; margin: 0 auto;">
+                <button class="btn-neon" onclick="hostGame()">Host Game</button>
+                <div style="display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--neon-blue); padding: 15px; border-radius: 10px;">
+                    <input type="text" id="join-code-input" placeholder="ENTER CODE" style="background: rgba(0,0,0,0.5); border: 1px solid var(--neon-blue); color: white; padding: 10px; text-align: center; font-family: 'Orbitron'; font-size: 18px;">
+                    <button class="btn-neon" onclick="joinGame()">Join Game</button>
+                </div>
+                <div id="multiplayer-status" style="color: var(--neon-pink); font-size: 14px; min-height: 20px;"></div>
+            </div>
+            <button class="btn-neon pink" style="margin-top: 20px;" onclick="openMainMenu()">Back</button>
+        </div>
+
+        <!-- LOBBY MENU -->
+        <div id="lobby-menu" class="screen-panel hidden">
+            <h2 style="color: var(--neon-blue); font-size: 32px; margin-top:0;">LOBBY: <span id="lobby-code-display" style="color: var(--neon-yellow);">------</span></h2>
+            <div id="lobby-players-list" style="margin: 20px 0; max-height: 200px; overflow-y: auto; text-align: left; padding: 10px; border: 1px solid rgba(0,243,255,0.3); border-radius: 10px;">
+                <!-- Players list -->
+            </div>
+            <div id="lobby-host-controls" class="hidden">
+                <button class="btn-neon" onclick="startMultiplayerGame()">Start Race</button>
+            </div>
+            <div id="lobby-client-status" style="color: #aaa; margin-bottom: 20px;">Waiting for host...</div>
+            <button class="btn-neon pink" onclick="leaveLobby()">Leave Lobby</button>
+        </div>
+
+        <!-- MUSIC PLAYER MENU -->
+        <div id="music-player-menu" class="screen-panel hidden">
+            <h2 style="color: var(--neon-blue); font-size: 32px; margin-top:0;">MUSIC PLAYER</h2>
+            <div class="settings-group" style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 10px;">
+                <button class="btn-neon" onclick="audio.startMusic('menu')">The Final Turn (Menu)</button>
+                <button class="btn-neon" onclick="audio.startMusic('race_7')">PHX (Phoenix Sky Harbor)</button>
+                <button class="btn-neon" onclick="audio.startMusic('loading')">Loading OST</button>
+                <button class="btn-neon" onclick="audio.startMusic('race_0')">Procedural: Desert</button>
+                <button class="btn-neon" onclick="audio.startMusic('race_1')">Procedural: Mountain</button>
+                <button class="btn-neon" onclick="audio.startMusic('race_2')">Procedural: Seaside</button>
+                <button class="btn-neon" onclick="audio.startMusic('race_3')">Procedural: Technical</button>
+                <button class="btn-neon" onclick="audio.startMusic('race_4')">Procedural: City</button>
+                <button class="btn-neon" onclick="audio.startMusic('race_5')">Procedural: Snow</button>
+                <button class="btn-neon" onclick="audio.startMusic('race_6')">Procedural: Volcano</button>
+                <button class="btn-neon" onclick="audio.startMusic('race_8')">Procedural: Monaco</button>
+                <button class="btn-neon" onclick="audio.startMusic('race_9')">Procedural: Cyberpunk</button>
+                <button class="btn-neon pink" onclick="audio.stopMusic()">Stop Music</button>
+            </div>
+            <button class="btn-neon pink" style="margin-top:30px;" onclick="openMainMenu()">Back</button>
+        </div>
+
+        <!-- SETTINGS MENU -->
+        <div id="settings-menu" class="screen-panel hidden">
+            <h2 style="color: var(--neon-pink); font-size: 32px; margin-top:0;">SETTINGS</h2>
+            
+            <div class="settings-group">
+                <span class="settings-label">Number of Laps</span>
+                <div class="settings-options" id="lap-options">
+                    <button class="btn-neon active" onclick="setLaps(3, this)">3</button>
+                    <button class="btn-neon" onclick="setLaps(5, this)">5</button>
+                    <button class="btn-neon" onclick="setLaps(10, this)">10</button>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <span class="settings-label">AI Difficulty (Base)</span>
+                <div class="settings-options" id="diff-options">
+                    <button class="btn-neon" onclick="setDifficulty('Easy', this)">Easy</button>
+                    <button class="btn-neon active" onclick="setDifficulty('Normal', this)">Normal</button>
+                    <button class="btn-neon" onclick="setDifficulty('Hard', this)">Hard</button>
+                </div>
+            </div>
+            
+            <div class="settings-group">
+                <span class="settings-label">Weather</span>
+                <div class="settings-options" id="weather-options" style="flex-wrap: wrap; gap: 10px;">
+                    <button class="btn-neon active" onclick="setWeather('Clear', this)">Clear</button>
+                    <button class="btn-neon" onclick="setWeather('Rain', this)">Rain</button>
+                    <button class="btn-neon" onclick="setWeather('Storm', this)">Storm</button>
+                    <button class="btn-neon" onclick="setWeather('Snow', this)">Snow</button>
+                    <button class="btn-neon" onclick="setWeather('Blizzard', this)">Blizzard</button>
+                    <button class="btn-neon" onclick="setWeather('Hurricane', this)">Hurricane</button>
+                </div>
+            </div>
+
+            <button class="btn-neon pink" style="margin-top:30px;" onclick="openMainMenu()">Back</button>
+        </div>
+
+        <!-- CAR SELECT MENU -->
+        <div id="car-select-menu" class="screen-panel hidden">
+            <h2 style="color: var(--neon-blue); font-size: 32px; margin-top:0;">SELECT YOUR CAR</h2>
+            <div class="car-grid" id="car-grid-container">
+                <!-- Injected via JS -->
+            </div>
+            
+            <div class="settings-group" style="margin-top: 20px;">
+                <span class="settings-label">Custom Color</span>
+                <input type="color" id="custom-car-color" value="#ffffff" onchange="updateCustomColor(this.value)" style="width: 50px; height: 50px; cursor: pointer; border: none; background: none;">
+            </div>
+            
+            <div class="settings-group">
+                <span class="settings-label">Special Effect</span>
+                <div class="settings-options" id="effect-options">
+                    <button class="btn-neon active" onclick="setCarEffect('None', this)">None</button>
+                    <button class="btn-neon" onclick="setCarEffect('Trails', this)">Trails</button>
+                    <button class="btn-neon" onclick="setCarEffect('Glow', this)">Glow</button>
+                    <button class="btn-neon" onclick="setCarEffect('Flames', this)">Flames</button>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px; display: flex; justify-content: center; gap: 20px;">
+                <button class="btn-neon pink" onclick="openMainMenu()">Back</button>
+                <button class="btn-neon" onclick="handleCarSelectNext()">Next</button>
+            </div>
+        </div>
+
+        <!-- RACE SETUP MENU -->
+        <div id="race-setup-menu" class="screen-panel hidden">
+            <h2 style="color: var(--neon-blue); font-size: 32px; margin-top:0;">RACE SETUP</h2>
+            
+            <div style="font-size: 24px; margin-bottom: 20px; display: flex; justify-content: center; align-items: center; gap: 20px;">
+                <button class="btn-neon" onclick="changeOpponents(-1)" style="padding: 10px 20px;">&lt;</button>
+                <span>OPPONENTS: <span id="opponent-count-val">3</span></span>
+                <button class="btn-neon" onclick="changeOpponents(1)" style="padding: 10px 20px;">&gt;</button>
+            </div>
+
+            <div id="opponent-grid" class="map-grid" style="max-height: 40vh;">
+                <!-- Auto generated opponent cards -->
+            </div>
+
+            <div style="margin-top: 20px; display: flex; justify-content: center; gap: 20px;">
+                <button class="btn-neon pink" onclick="openCarSelect()">Back</button>
+                <button class="btn-neon" onclick="openMapSelect()">Next</button>
+            </div>
+        </div>
+
+        <!-- MAP SELECT MENU -->
+        <div id="map-select-menu" class="screen-panel hidden">
+            <h2 style="color: var(--neon-blue); font-size: 32px; margin-top:0;">SELECT TRACK</h2>
+            <div class="map-grid" id="map-grid-container">
+                <!-- Injected via JS -->
+            </div>
+            <button class="btn-neon pink" style="margin-top:20px;" onclick="openRaceSetup()">Back</button>
+        </div>
+
+        <!-- FALL GUYS STYLE LOADING SCREEN -->
+        <div id="loading-screen" class="screen-panel hidden fall-guys-loading" style="width: 100vw; height: 100vh; max-width: none; max-height: none; border-radius: 0; border: none; top: 0; left: 0; transform: none; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #050510;">
+            <h2 id="loading-track-name" style="color: var(--neon-blue); font-size: 64px; margin-bottom: 10px; text-shadow: 0 0 20px var(--neon-blue); font-family: 'Orbitron', sans-serif;">TRACK NAME</h2>
+            <h3 id="loading-objective" style="color: var(--neon-pink); font-size: 32px; margin-bottom: 50px; text-shadow: 0 0 10px var(--neon-pink); font-family: 'Orbitron', sans-serif;">RACE</h3>
+            
+            <div style="display: flex; gap: 60px; align-items: center; margin-bottom: 60px;">
+                <canvas id="loading-minimap" width="400" height="300" style="border: 3px solid var(--neon-blue); border-radius: 15px; box-shadow: 0 0 25px var(--neon-blue); background: rgba(0,0,0,0.5);"></canvas>
+                <div style="max-width: 500px; text-align: left; background: rgba(0,0,0,0.6); padding: 30px; border-radius: 15px; border: 1px solid rgba(0, 255, 255, 0.3);">
+                    <h4 style="color: var(--neon-yellow); margin-bottom: 20px; font-size: 28px; font-family: 'Orbitron', sans-serif;">Track Info & Tips</h4>
+                    <ul id="loading-track-desc-list" style="color: #fff; font-size: 20px; line-height: 1.8; padding-left: 25px; font-family: sans-serif;">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 20px;">
+                <div class="loading-spinner" style="width: 60px; height: 60px; border: 6px solid rgba(0, 255, 255, 0.1); border-top: 6px solid var(--neon-blue); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                <span style="color: var(--neon-blue); font-size: 24px; font-family: 'Orbitron', sans-serif; letter-spacing: 3px; animation: pulse 1.5s infinite;">LOADING...</span>
+            </div>
+            <style>
+                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+            </style>
+        </div>
+
+        <!-- ELIMINATION SCREEN -->
+        <div id="elimination-screen" class="screen-panel hidden">
+            <h2 id="elim-title" style="color: var(--neon-blue); font-size: 36px; margin-top: 0;">ROUND RESULTS</h2>
+            <div id="elim-message" style="font-size: 24px; font-weight: bold; margin-bottom: 20px;"></div>
+            <div style="display: flex; gap: 40px; justify-content: center; margin-top: 20px;">
+                <div style="background: rgba(0,0,0,0.6); border: 1px solid #444; padding: 20px; border-radius: 8px; width: 250px; text-align: left; max-height: 300px; overflow-y: auto;">
+                    <h3 style="color: var(--neon-green); margin-top: 0; text-align: center; border-bottom: 1px solid var(--neon-green); padding-bottom: 10px;">ADVANCED</h3>
+                    <div id="elim-advanced-list"></div>
+                </div>
+                <div style="background: rgba(0,0,0,0.6); border: 1px solid #444; padding: 20px; border-radius: 8px; width: 250px; text-align: left; max-height: 300px; overflow-y: auto;">
+                    <h3 style="color: #ff3333; margin-top: 0; text-align: center; border-bottom: 1px solid #ff3333; padding-bottom: 10px;">ELIMINATED</h3>
+                    <div id="elim-eliminated-list"></div>
+                </div>
+            </div>
+            <button id="elim-next-btn" class="btn-neon hidden" style="margin-top: 30px;">Next</button>
+        </div>
+
+        <!-- CUP VICTORY SCREEN -->
+        <div id="cup-victory-screen" class="screen-panel hidden">
+            <div style="font-size: 100px; margin-bottom: 20px; animation: pulseText 2s infinite alternate;">🏆</div>
+            <h1 class="title" style="color: var(--neon-yellow); text-shadow: 0 0 20px var(--neon-yellow);">CUP CHAMPION!</h1>
+            <p style="font-size: 24px; color: white;">You survived all 4 rounds and claimed victory!</p>
+            <button class="btn-neon" onclick="quitToMenu()" style="margin-top: 30px;">Main Menu</button>
+        </div>
+
+        <!-- PAUSE MENU -->
+        <div id="pause-menu" class="screen-panel hidden">
+            <h1 style="color: var(--neon-yellow); text-shadow: 0 0 20px var(--neon-yellow);">PAUSED</h1>
+            <button class="btn-neon" onclick="togglePause()">Resume</button>
+            <button class="btn-neon pink" onclick="startLoadingScreen(currentMapIndex)">Restart Race</button>
+            <button class="btn-neon pink" onclick="quitToMenu()">Main Menu</button>
+        </div>
+
+        <!-- GAME OVER / RESULTS (Quick Race) -->
+        <div id="game-over-screen" class="screen-panel hidden">
+            <h1 id="result-title" class="title">RACE FINISHED</h1>
+            
+            <div class="podium" id="podium-container">
+                <!-- Podium injected via JS -->
+            </div>
+
+            <p id="result-stats" style="font-size: 20px; color: #ddd; margin-bottom: 30px;"></p>
+            
+            <button class="btn-neon" onclick="startLoadingScreen(currentMapIndex)">Race Again</button>
+            <button class="btn-neon pink" onclick="quitToMenu()">Main Menu</button>
+        </div>
+    </div>
+
+</body>
+</html>
