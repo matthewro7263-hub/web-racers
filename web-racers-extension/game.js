@@ -351,6 +351,106 @@
         let gameMode = 'QUICK_RACE';
         let cupState = { round: 1, tracks: [] };
         
+        let gpState = { trackIndex: 0, tracks: [], standings: [] };
+        const GP_POINTS = [15, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+
+        function openGrandPrix() {
+            gameMode = 'GRAND_PRIX';
+            playerBestLap = Infinity;
+            audio.init();
+            audio.startMusic('menu');
+            gameState = 'CAR_SELECT';
+            showScreen('car-select-menu');
+        }
+
+        function initGrandPrix() {
+            generateOpponents(true);
+            let pool = [0,1,2,3,4,5,6,7,8,9];
+            gpState.tracks = [];
+            for(let i=0; i<4; i++) {
+                let idx = Math.floor(Math.random() * pool.length);
+                gpState.tracks.push(pool.splice(idx, 1)[0]);
+            }
+            gpState.trackIndex = 0;
+            gpState.standings = cars.map(c => ({ id: c.id, points: 0, color: c.color, isPlayer: c.isPlayer }));
+            config.totalLaps = 3;
+            startLoadingScreen(gpState.tracks[0]);
+        }
+
+        function gpNextRace() {
+            gpState.trackIndex++;
+            if (gpState.trackIndex < gpState.tracks.length) {
+                startLoadingScreen(gpState.tracks[gpState.trackIndex]);
+            } else {
+                showGPPodium();
+            }
+        }
+
+        function updateGPStandings() {
+            racePositions.forEach((c, i) => {
+                let s = gpState.standings.find(st => st.id === c.id);
+                if (s) s.points += GP_POINTS[Math.min(i, GP_POINTS.length - 1)];
+            });
+            gpState.standings.sort((a, b) => b.points - a.points);
+        }
+
+        function showGPStandings() {
+            screens.classList.remove('hidden');
+            document.querySelectorAll('.screen-panel').forEach(p => p.classList.add('hidden'));
+            document.getElementById('gp-standings-screen').classList.remove('hidden');
+            uiLayer.classList.add('hidden');
+
+            document.getElementById('gp-track-info').innerText = `Race ${gpState.trackIndex + 1} of ${gpState.tracks.length} Complete`;
+            
+            let list = document.getElementById('gp-standings-list');
+            list.innerHTML = gpState.standings.map((s, i) => `
+                <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #333; color: ${s.color}; font-weight: bold;">
+                    <span>${i+1}. ${s.id} ${s.isPlayer ? '(YOU)' : ''}</span>
+                    <span>${s.points} PTS</span>
+                </div>
+            `).join('');
+
+            let nextBtn = document.getElementById('gp-next-btn');
+            if (gpState.trackIndex === gpState.tracks.length - 1) {
+                nextBtn.innerText = "View Final Results";
+            } else {
+                nextBtn.innerText = "Next Race";
+            }
+        }
+
+        function showGPPodium() {
+            showScreen('gp-podium-screen');
+            let container = document.getElementById('gp-podium-container');
+            container.innerHTML = '';
+            
+            let top3 = gpState.standings.slice(0, 3);
+            let orders = [1, 0, 2]; // Silver, Gold, Bronze
+            let heights = [120, 160, 100];
+            let labels = ['2nd', '1st', '3rd'];
+            let colors = ['#C0C0C0', '#FFD700', '#CD7F32'];
+
+            orders.forEach(i => {
+                let s = top3[i];
+                if (!s) return;
+                let step = document.createElement('div');
+                step.className = 'podium-step';
+                step.style.height = heights[i] + 'px';
+                step.style.background = colors[i];
+                step.innerHTML = `
+                    <div class="podium-label" style="top: -100px; width: 120px; left: 50%; transform: translateX(-50%); position: absolute; text-align: center;">
+                        <div style="color: ${s.color}; font-weight: 900; font-size: 18px; margin-bottom: 10px;">${s.id}</div>
+                        <div style="color: #fff; font-size: 24px; font-weight: 900;">${labels[i]}</div>
+                        <div style="color: rgba(255,255,255,0.8); font-size: 14px;">${s.points} PTS</div>
+                    </div>
+                `;
+                container.appendChild(step);
+            });
+            
+            if (top3[0] && top3[0].isPlayer) audio.playYouWin();
+            else audio.victory();
+        }
+
+        
         const config = {
             trackWidth: 220,
             totalLaps: 3,
@@ -392,8 +492,10 @@
         let traps = [];
         let movingHazards = [];
         let zoneHazards = [];
+        let lightningStrikes = [];
         let coins = [];
         let raceCoins = 0;
+        let raceCoins2 = 0;
         let playerCoins = parseInt(localStorage.getItem('webRacers_coins') || '0');
         let playerUpgrades = JSON.parse(localStorage.getItem('webRacers_upgrades') || '{"speed":0, "accel":0, "handling":0, "nitro":0}'); 
         let flyoverObj = null;
@@ -529,7 +631,7 @@
         }
         const fx = new ParticleSystem();
         // --- Audio System (Pure Web Audio API / Tone.js Synthesizers) ---
-        const audio = {
+        var audio = {
             isInit: false,
             muted: false,
             
@@ -584,6 +686,7 @@
                         BALANCED:    { wave: 'sawtooth', baseFreq: 40, freqMult: 5, filterBase: 200, filterMult: 50, vol: -10, wave2: 'triangle',  freq2Ratio: 1.5, vol2: -20 },
                         TANK:        { wave: 'square',   baseFreq: 28, freqMult: 3, filterBase: 150, filterMult: 40, vol: -6,  wave2: 'sawtooth',  freq2Ratio: 0.5, vol2: -14 }
                     };
+        window.audio = audio;
                     this.activeEngineProfile = this.engineProfiles.BALANCED;
                 }
             },
@@ -814,7 +917,7 @@
             },
             updateEngine(speed, isPlaying) {
                 if (!this.isInit || this.muted || !this.engineOsc) return;
-                let p = this.activeEngineProfile || { baseFreq: 40, freqMult: 5, filterBase: 200, filterMult: 50, vol: -10, freq2Ratio: 1.5, vol2: -20 };
+                let p = this.activeEngineProfile || this.engineProfiles.BALANCED;
                 if (!isPlaying) {
                     this.engineOsc.volume.rampTo(-Infinity, 0.1);
                     if (this.engineOsc2) this.engineOsc2.volume.rampTo(-Infinity, 0.1);
@@ -849,7 +952,6 @@
                 if (!this.isInit || this.muted) return;
                 let t = Tone.now();
                 let dur = 3.5;
-                let noise = new Tone.Noise("pink").start(t).stop(t + dur);
                 let filter = new Tone.Filter({ type: "lowpass", frequency: 200 });
                 filter.frequency.setValueAtTime(200, t);
                 filter.frequency.exponentialRampToValueAtTime(1500, t + dur/2);
@@ -857,7 +959,10 @@
                 let panner = new Tone.Panner(-1);
                 panner.pan.linearRampToValueAtTime(1, t + dur);
                 let env = new Tone.AmplitudeEnvelope({ attack: dur/2, decay: 0, sustain: 1.0, release: dur/2 });
+                let noise = new Tone.Noise("pink");
                 noise.chain(filter, panner, env, Tone.Destination);
+                noise.start(t).stop(t + dur);
+                noise.onstop = () => { noise.dispose(); filter.dispose(); panner.dispose(); env.dispose(); };
                 env.triggerAttackRelease(dur, t);
             },
             
@@ -888,17 +993,18 @@
             playLaserShot() {
                 if (!this.isInit || this.muted) return;
                 let t = Tone.now();
-                let osc = new Tone.Oscillator({ type: 'square', frequency: 1800 }).toDestination();
-                osc.volume.value = -14;
-                osc.frequency.setValueAtTime(1800, t);
-                osc.frequency.exponentialRampToValueAtTime(300, t + 0.12);
-                osc.start(t).stop(t + 0.12);
                 let osc2 = new Tone.Oscillator({ type: 'sawtooth', frequency: 2400 }).toDestination();
                 osc2.volume.value = -20;
                 osc2.frequency.setValueAtTime(2400, t);
                 osc2.frequency.exponentialRampToValueAtTime(600, t + 0.08);
                 osc2.start(t).stop(t + 0.08);
-                setTimeout(() => { osc.dispose(); osc2.dispose(); }, 600);
+                osc2.onstop = () => osc2.dispose();
+                let osc = new Tone.Oscillator({ type: 'square', frequency: 1800 }).toDestination();
+                osc.volume.value = -14;
+                osc.frequency.setValueAtTime(1800, t);
+                osc.frequency.exponentialRampToValueAtTime(300, t + 0.12);
+                osc.start(t).stop(t + 0.12);
+                osc.onstop = () => osc.dispose();
             },
             playMissileLaunch() {
                 if (!this.isInit || this.muted) return;
@@ -906,29 +1012,31 @@
                 let filter = new Tone.Filter({ type: 'bandpass', frequency: 400 }).toDestination();
                 filter.frequency.setValueAtTime(400, t);
                 filter.frequency.exponentialRampToValueAtTime(2000, t + 0.25);
-                let noise = new Tone.Noise('white');
-                noise.volume.value = -16;
-                noise.connect(filter);
-                noise.start(t).stop(t + 0.35);
                 let osc = new Tone.Oscillator({ type: 'sawtooth', frequency: 80 }).toDestination();
                 osc.volume.value = -12;
                 osc.frequency.setValueAtTime(80, t);
                 osc.frequency.exponentialRampToValueAtTime(300, t + 0.3);
                 osc.start(t).stop(t + 0.3);
-                setTimeout(() => { osc.dispose(); noise.dispose(); filter.dispose(); }, 800);
+                osc.onstop = () => osc.dispose();
+                let noise = new Tone.Noise('white');
+                noise.volume.value = -16;
+                noise.connect(filter);
+                noise.start(t).stop(t + 0.35);
+                noise.onstop = () => { noise.dispose(); filter.dispose(); };
             },
             playMineDrop() {
                 if (!this.isInit || this.muted) return;
                 let t = Tone.now();
+                let click = new Tone.Noise('white').toDestination();
+                click.volume.value = -18;
+                click.start(t).stop(t + 0.03);
+                click.onstop = () => click.dispose();
                 let osc = new Tone.Oscillator({ type: 'sine', frequency: 120 }).toDestination();
                 osc.volume.value = -10;
                 osc.frequency.setValueAtTime(120, t);
                 osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
                 osc.start(t).stop(t + 0.15);
-                let click = new Tone.Noise('white').toDestination();
-                click.volume.value = -18;
-                click.start(t).stop(t + 0.03);
-                setTimeout(() => { osc.dispose(); click.dispose(); }, 500);
+                osc.onstop = () => osc.dispose();
             },
             playExplosion() {
                 if (!this.isInit || this.muted) return;
@@ -936,16 +1044,17 @@
                 let filter = new Tone.Filter({ type: 'lowpass', frequency: 2000 }).toDestination();
                 filter.frequency.setValueAtTime(2000, t);
                 filter.frequency.exponentialRampToValueAtTime(80, t + 0.4);
-                let noise = new Tone.Noise('brown');
-                noise.volume.value = -8;
-                noise.connect(filter);
-                noise.start(t).stop(t + 0.4);
                 let boom = new Tone.Oscillator({ type: 'sine', frequency: 60 }).toDestination();
                 boom.volume.value = -6;
                 boom.frequency.setValueAtTime(60, t);
                 boom.frequency.exponentialRampToValueAtTime(20, t + 0.3);
                 boom.start(t).stop(t + 0.3);
-                setTimeout(() => { noise.dispose(); filter.dispose(); boom.dispose(); }, 900);
+                boom.onstop = () => boom.dispose();
+                let noise = new Tone.Noise('brown');
+                noise.volume.value = -8;
+                noise.connect(filter);
+                noise.start(t).stop(t + 0.4);
+                noise.onstop = () => { noise.dispose(); filter.dispose(); };
             },
             playShieldUp() {
                 if (!this.isInit || this.muted) return;
@@ -961,9 +1070,9 @@
                 let noise = new Tone.Noise('white').toDestination();
                 noise.volume.value = -14;
                 noise.start(t).stop(t + 0.15);
+                noise.onstop = () => noise.dispose();
                 this.playSynth('synthBass', 50, t, 0.2, 0.4);
                 this.playSynth('synthBass', 45, t + 0.08, 0.15, 0.3);
-                setTimeout(() => { noise.dispose(); }, 500);
             },
             playNitroBoost() {
                 if (!this.isInit || this.muted) return;
@@ -973,10 +1082,11 @@
                 osc.frequency.setValueAtTime(200, t);
                 osc.frequency.exponentialRampToValueAtTime(800, t + 0.2);
                 osc.start(t).stop(t + 0.25);
+                osc.onstop = () => osc.dispose();
                 let noise = new Tone.Noise('pink').toDestination();
                 noise.volume.value = -18;
                 noise.start(t).stop(t + 0.3);
-                setTimeout(() => { osc.dispose(); noise.dispose(); }, 700);
+                noise.onstop = () => noise.dispose();
             },
 
             startRain(intensity) {
@@ -1001,19 +1111,23 @@
                 if (!this.isInit || this.muted) return;
                 let t = Tone.now();
                 let dur = 2.5;
-                let noise = new Tone.Noise("brown").start(t).stop(t + dur);
                 let filter = new Tone.Filter({ type: "lowpass", frequency: 800 });
                 filter.frequency.setValueAtTime(800, t);
                 filter.frequency.exponentialRampToValueAtTime(100, t + 0.2);
                 filter.frequency.exponentialRampToValueAtTime(40, t + dur);
                 let env = new Tone.AmplitudeEnvelope({ attack: 0.05, decay: dur, sustain: 0, release: 0.1 });
+                let noise = new Tone.Noise("brown");
                 noise.chain(filter, env, Tone.Destination);
+                noise.start(t).stop(t + dur);
+                noise.onstop = () => { noise.dispose(); filter.dispose(); env.dispose(); };
                 env.triggerAttackRelease(dur, t);
-                
-                let rumble = new Tone.Oscillator({ type: "sine", frequency: 60 }).start(t).stop(t + dur);
-                rumble.frequency.exponentialRampToValueAtTime(20, t + dur);
+
                 let rumbleEnv = new Tone.AmplitudeEnvelope({ attack: 0.2, decay: dur, sustain: 0, release: 0.1 });
+                let rumble = new Tone.Oscillator({ type: "sine", frequency: 60 });
                 rumble.chain(rumbleEnv, Tone.Destination);
+                rumble.frequency.exponentialRampToValueAtTime(20, t + dur);
+                rumble.start(t).stop(t + dur);
+                rumble.onstop = () => { rumble.dispose(); rumbleEnv.dispose(); };
                 rumbleEnv.triggerAttackRelease(dur, t);
             },
 
@@ -1865,6 +1979,37 @@
             }
         }
 
+        
+        class LightningStrike {
+            constructor(x, y) { this.x = x; this.y = y; this.life = 40; this.impacted = false; }
+            update() {
+                this.life--;
+                if (this.life <= 10 && !this.impacted) {
+                    this.impacted = true;
+                    cars.forEach(c => {
+                        if (dist2(this, c) < 40000) { // 200px radius
+                            if (c.shieldTimer > 0) { c.shieldTimer = 0; }
+                            else { c.spinTimer = 120; c.speed = 0; if(c.isPlayer) cameraShake = 30; }
+                        }
+                    });
+                }
+            }
+            draw(ctx) {
+                if (this.life <= 0) return;
+                ctx.save(); ctx.translate(this.x, this.y);
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 10;
+                ctx.shadowColor = '#00f3ff'; ctx.shadowBlur = 30;
+                ctx.beginPath();
+                ctx.moveTo(0, -1000); ctx.lineTo(-40, -600); ctx.lineTo(40, -400); ctx.lineTo(0, 0);
+                ctx.stroke();
+                if (this.impacted) {
+                    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                    ctx.beginPath(); ctx.arc(0,0,100,0,Math.PI*2); ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
         class ZoneHazard {
             constructor(type, x, y, radius, dirX, dirY, force) {
                 this.type = type; this.x = x; this.y = y; this.radius = radius; 
@@ -2055,15 +2200,21 @@
                 else if (config.weather === 'Hurricane') { wSpeedMod = 0.5; wHandMod = 0.5; }
 
                 if (this.isPlayer) {
-                    let ct = carTypes[selectedCarIndex];
+                    let pIdx = (this.id === 'Player 2' || (typeof player !== 'undefined' && player)) ? selectedCarIndex2 : selectedCarIndex;
+                    // Improved check: if player 1 exists and we are not player 1, we must be player 2
+                    if (typeof player !== 'undefined' && player && this !== player) pIdx = selectedCarIndex2;
+                    else pIdx = selectedCarIndex;
+                    
+                    let ct = carTypes[pIdx];
                     this.maxSpeed = ct.maxSpeed * wSpeedMod;
                     this.baseAcceleration = ct.baseAcceleration;
                     this.turnSpeed = ct.turnSpeed * wHandMod;
                 } else {
+                    let safeTier = tier || { speedMult: 1, accelMult: 1, turnMult: 1 };
                     let aiSpeedOffset = config.difficulty === 'Hard' ? 1 : (config.difficulty === 'Normal' ? -1.5 : -3);
-                    this.maxSpeed = (15 + aiSpeedOffset + (Math.random())) * 1.2 * tier.speedMult * wSpeedMod;
-                    this.baseAcceleration = (config.difficulty === 'Hard' ? 0.28 : 0.22) * 1.3 * tier.accelMult;
-                    this.turnSpeed = 0.06 * tier.turnMult * wHandMod;
+                    this.maxSpeed = (15 + aiSpeedOffset + (Math.random())) * 1.2 * safeTier.speedMult * wSpeedMod;
+                    this.baseAcceleration = (config.difficulty === 'Hard' ? 0.28 : 0.22) * 1.3 * safeTier.accelMult;
+                    this.turnSpeed = 0.06 * safeTier.turnMult * wHandMod;
                 }
                 
                 this.acceleration = this.baseAcceleration;
@@ -2171,7 +2322,11 @@
                         // Nitro Logic
                         let wantsNitro = false;
                         if (this.isPlayer) {
-                            wantsNitro = keys['Shift'] || keys['Nitro'];
+                            if (gameMode === 'LOCAL_MULTIPLAYER') {
+                                wantsNitro = (this === player) ? (keys['Shift']) : keys['/'];
+                            } else {
+                                wantsNitro = keys['Shift'] || keys['Nitro'];
+                            }
                         } else {
                             // AI Nitro Logic
                             if (this.tier && this.tier.name === 'RIVAL') {
@@ -2457,6 +2612,36 @@
             }
 
             handlePlayerInput(keys) {
+                let controls = {
+                    up: keys['ArrowUp'] || keys['w'],
+                    down: keys['ArrowDown'] || keys['s'],
+                    left: keys['ArrowLeft'] || keys['a'],
+                    right: keys['ArrowRight'] || keys['d'],
+                    nitro: keys['Shift'] || keys['Nitro'],
+                    item: keys['e'] || keys['E'] || keys['Enter']
+                };
+                
+                if (gameMode === 'LOCAL_MULTIPLAYER') {
+                    if (this === player) {
+                        controls = {
+                            up: keys['w'] || keys['W'],
+                            down: keys['s'] || keys['S'],
+                            left: keys['a'] || keys['A'],
+                            right: keys['d'] || keys['D'],
+                            nitro: keys['Shift'],
+                            item: keys['e'] || keys['E']
+                        };
+                    } else if (this === player2) {
+                        controls = {
+                            up: keys['ArrowUp'],
+                            down: keys['ArrowDown'],
+                            left: keys['ArrowLeft'],
+                            right: keys['ArrowRight'],
+                            nitro: keys['/'],
+                            item: keys['Enter']
+                        };
+                    }
+                }
                 // Incorporate drafting & mini-turbo boosts into physics limits
                 let boostMult = 1;
                 if (this.nitroActive) boostMult = 2.0;
@@ -2470,10 +2655,10 @@
                 let currentMaxSpeed = this.maxSpeed * boostMult * upgSpeed;
                 
                 if (this.miniTurboTimer > 0) this.miniTurboTimer--;
-                if ((keys['e'] || keys['E'] || keys['Enter']) && this.item && this.itemRouletteTimer <= 0) this.useItem();
+                if (controls.item && this.item && this.itemRouletteTimer <= 0) this.useItem();
 
-                if (keys['ArrowUp'] || keys['w']) this.speed += currentAccel;
-                else if (keys['ArrowDown'] || keys['s']) this.speed -= this.braking;
+                if (controls.up) this.speed += currentAccel;
+                else if (controls.down) this.speed -= this.braking;
 
                 if (this.speed > currentMaxSpeed) this.speed = currentMaxSpeed;
                 if (this.speed < -this.reverseSpeed) this.speed = -this.reverseSpeed;
@@ -2486,11 +2671,11 @@
                     let isTurning = false;
                     let upgHand = this.isPlayer ? 1 + playerUpgrades.handling * 0.08 : 1;
                     
-                    if (keys['ArrowLeft'] || keys['a']) { this.angle -= this.turnSpeed * dir * turnRatio * upgHand; isTurning = true; }
-                    if (keys['ArrowRight'] || keys['d']) { this.angle += this.turnSpeed * dir * turnRatio * upgHand; isTurning = true; }
+                    if (controls.left) { this.angle -= this.turnSpeed * dir * turnRatio * upgHand; isTurning = true; }
+                    if (controls.right) { this.angle += this.turnSpeed * dir * turnRatio * upgHand; isTurning = true; }
                     
                     // Refined Drifting Logic
-                    let wantsToDrift = keys[' '];
+                    let wantsToDrift = (this === player && gameMode === 'LOCAL_MULTIPLAYER') ? keys['Shift'] : (keys[' '] || (this === player2 && keys['/']));
                     let canInitiateDrift = wantsToDrift && isTurning && this.speed > this.maxSpeed * 0.4 && this.onTrack;
                     
                     if ((this.isDrifting && wantsToDrift && this.onTrack && this.speed > this.maxSpeed * 0.3) || canInitiateDrift) {
@@ -2509,8 +2694,8 @@
                         this.angle += this.turnSpeed * this.driftDir * 0.4 * turnRatio;
                         
                         // If steering into the drift, turn even sharper
-                        if (this.driftDir === -1 && (keys['ArrowLeft'] || keys['a'])) this.angle -= this.turnSpeed * 0.6 * turnRatio;
-                        if (this.driftDir === 1 && (keys['ArrowRight'] || keys['d'])) this.angle += this.turnSpeed * 0.6 * turnRatio;
+                        if (this.driftDir === -1 && controls.left) this.angle -= this.turnSpeed * 0.6 * turnRatio;
+                        if (this.driftDir === 1 && controls.right) this.angle += this.turnSpeed * 0.6 * turnRatio;
                         
                     } else {
                         if (this.isDrifting) {
@@ -2548,6 +2733,16 @@
             handleAI() {
                 let targetWP = activeWaypoints[this.aiTargetWaypoint];
                 let nextWP = activeWaypoints[(this.aiTargetWaypoint + 1) % activeWaypoints.length];
+                
+                // Dynamic Rubberbanding
+                let rubberMult = 1.0;
+                if (player && !this.isRemote) {
+                    let dDist = this.distanceDriven - player.distanceDriven;
+                    if (dDist > 3000) rubberMult = 0.8; // Slow down if way ahead
+                    else if (dDist > 1500) rubberMult = 0.9;
+                    else if (dDist < -3000) rubberMult = 1.3; // Speed up if way behind
+                    else if (dDist < -1500) rubberMult = 1.15;
+                }
                 
                 if (this.item && this.itemRouletteTimer <= 0 && Math.random() < 0.01) this.useItem();
                 if (this.jumpTimer > 0) {
@@ -3064,7 +3259,39 @@
         const lapVal = document.getElementById('lap-val');
         const timeVal = document.getElementById('time-val');
         const posVal = document.getElementById('pos-val');
+        const speedVal2 = document.getElementById('speed-val2');
+        const timeVal2 = document.getElementById('time-val2');
+        const posVal2 = document.getElementById('pos-val2');
 
+        
+        async function handleStartLoading() {
+            const btn = document.getElementById('start-loading-btn');
+            if (btn) btn.style.display = 'none';
+            const statusText = document.getElementById('loading-status-text');
+            if (statusText) statusText.style.display = 'block';
+            const bottomBar = document.getElementById('asset-bottom-bar');
+            if (bottomBar) bottomBar.style.display = 'flex';
+            
+            await Tone.start(); 
+            audio.init();
+            audio.startMusic('loading');
+
+            const fill = document.getElementById('asset-bar-fill');
+            const text = document.getElementById('asset-bottom-text');
+            
+            audio.loadAssets((progressText, percent) => {
+                if (text) text.innerText = progressText;
+                if (fill) fill.style.width = percent + '%';
+            }, () => {
+                const loadingScreen = document.getElementById('asset-loading-screen');
+                if (loadingScreen) loadingScreen.classList.add('hidden');
+                showScreen('main-menu');
+                generateSpeedLines();
+                audio.startMusic('menu');
+            });
+        }
+        window.handleStartLoading = handleStartLoading;
+    
         function showScreen(screenId) {
             document.querySelectorAll('.screen-panel').forEach(p => p.classList.add('hidden'));
             document.getElementById(screenId).classList.remove('hidden');
@@ -3098,6 +3325,15 @@
             generateOpponents();
         }
 
+        function openLocalMultiplayer() {
+            gameMode = 'LOCAL_MULTIPLAYER';
+            playerBestLap = Infinity;
+            window.playerBestLap2 = Infinity;
+            showScreen('car-select-menu');
+            // We'll need a way to select two cars. For now, let's just make it auto-select for P2 or add a P2 selection step.
+            // Simplest: P1 selects, then P2 selects.
+            window.isP2Selecting = false;
+        }
         function openQuickRace() {
             gameMode = 'QUICK_RACE';
             playerBestLap = Infinity;
@@ -3117,7 +3353,14 @@
         }
         
         function handleCarSelectNext() {
-            if (gameMode === 'QUICK_RACE') {
+            if (gameMode === 'LOCAL_MULTIPLAYER' && !window.isP2Selecting) {
+                window.isP2Selecting = true;
+                document.querySelector('#car-select-menu h2').innerText = "PLAYER 2: SELECT YOUR CAR";
+                document.querySelector('#car-select-menu h2').style.color = "var(--neon-pink)";
+                selectCar(selectedCarIndex2);
+                return;
+            }
+            if (gameMode === 'QUICK_RACE' || gameMode === 'LOCAL_MULTIPLAYER') {
                 audio.startMusic('menu');
                 gameState = 'RACE_SETUP';
                 generateOpponents();
@@ -3128,6 +3371,9 @@
         }
         
         function openCarSelect() {
+            window.isP2Selecting = false;
+            document.querySelector('#car-select-menu h2').innerText = 'SELECT YOUR CAR';
+            document.querySelector('#car-select-menu h2').style.color = 'var(--neon-blue)';
             audio.startMusic('menu');
             gameState = 'CAR_SELECT';
             showScreen('car-select-menu');
@@ -3240,6 +3486,7 @@
             }
         }
 
+        function claimTrophy() { gameState = 'CUP_VICTORY'; showScreen('cup-victory-screen'); audio.victory(); }
         function quitToMenu() {
             const { doc, deleteDoc } = window.firebaseModular;
             lastMultiplayerSyncTime = 0;
@@ -3348,7 +3595,7 @@
                 const card = document.createElement('div');
                 card.className = `car-card ${index === selectedCarIndex ? 'active' : ''}`;
                 card.id = `car-card-${index}`;
-                card.onclick = () => selectCar(index);
+                card.setAttribute('data-onclick', 'selectCar(' + index + ')');
 
                 const preview = document.createElement('div');
                 preview.className = 'car-preview';
@@ -3479,7 +3726,7 @@
                 
                 let card = document.createElement('div');
                 card.className = 'map-card'; 
-                card.onclick = () => cycleDifficulty(i);
+                card.setAttribute('data-onclick', 'cycleDifficulty(' + i + ')');
                 card.innerHTML = `
                     <div style="font-size: 24px; color: ${opp.color}; margin-bottom: 5px;">🚗</div>
                     <div style="font-weight: bold; font-size: 14px; margin-bottom: 5px;">${opp.name}</div>
@@ -3498,7 +3745,7 @@
             mapsData.forEach((map, index) => {
                 const card = document.createElement('div');
                 card.className = 'map-card';
-                card.onclick = () => startLoadingScreen(index);
+                card.setAttribute('data-onclick', 'startLoadingScreen(' + index + ')');
                 
                 const mCanv = document.createElement('canvas');
                 mCanv.className = 'map-canvas';
@@ -3596,7 +3843,8 @@
             startLoadingScreen(cupState.tracks[0]);
         }
         
-        function startLoadingScreen(mapIndex) {
+                function startLoadingScreen(mapIndex) {
+            console.log("Starting loading for map:", mapIndex);
             audio.stopMusic();
             setTimeout(() => {
                 if (gameState === 'LOADING') {
@@ -3606,38 +3854,50 @@
             
             gameState = 'LOADING';
             showScreen('loading-screen');
-            screens.classList.remove('hidden');
-            uiLayer.classList.add('hidden');
-            document.getElementById('countdown').style.display = 'none';
+            
+            // Ensure UI elements are correctly shown/hidden
+            if(screens) screens.classList.remove('hidden');
+            if(uiLayer) uiLayer.classList.add('hidden');
+            const countdownNode = document.getElementById('countdown');
+            if(countdownNode) countdownNode.style.display = 'none';
             
             initGame(mapIndex);
-            drawLoadingMinimap(mapIndex);
             
-            document.getElementById('loading-track-name').innerText = mapsData[mapIndex].name;
-
-            // Format instructions cleanly for the fall guys layout
-            let desc = trackDescriptions[mapIndex];
-            let tips = desc.split('. ').filter(t => t.trim().length > 0).map(t => t.endsWith('.') ? t : t + '.');
-            let listHtml = tips.map(t => `<li>${t}</li>`).join('');
-            document.getElementById('loading-track-desc-list').innerHTML = listHtml;
+            // Populate loading screen data
+            const nameEl = document.getElementById('loading-track-name');
+            if(nameEl && mapsData[mapIndex]) nameEl.innerText = mapsData[mapIndex].name;
             
-            let objText = "QUICK RACE";
-            if (gameMode === 'KNOCKOUT_CUP') {
-                if(cupState.round === 1) objText = "RND 1: TOP 10";
-                else if(cupState.round === 2) objText = "RND 2: TOP 7";
-                else if(cupState.round === 3) objText = "SEMI: TOP 3";
-                else if(cupState.round === 4) objText = "FINAL ROUND";
+            const objEl = document.getElementById('loading-objective');
+            if(objEl) {
+                let objText = "QUICK RACE";
+                if (gameMode === 'GRAND_PRIX') objText = "GRAND PRIX";
+                else if (gameMode === 'LOCAL_MULTIPLAYER') objText = "LOCAL BATTLE";
+                else if (gameMode === 'KNOCKOUT_CUP') {
+                    if(cupState.round === 1) objText = "RND 1: TOP 10";
+                    else if(cupState.round === 2) objText = "RND 2: TOP 7";
+                    else if(cupState.round === 3) objText = "SEMI: TOP 3";
+                    else if(cupState.round === 4) objText = "FINAL ROUND";
+                }
+                objEl.innerText = objText;
             }
-            document.getElementById('loading-objective').innerText = objText;
 
-            let duration = 3000 + Math.random() * 4000;
-            let start = Date.now();
+            const descList = document.getElementById('loading-track-desc-list');
+            if(descList && trackDescriptions[mapIndex]) {
+                let desc = trackDescriptions[mapIndex];
+                let tips = desc.split('. ').filter(t => t.trim().length > 0).map(t => t.endsWith('.') ? t : t + '.');
+                descList.innerHTML = tips.map(t => `<li>${t}</li>`).join('');
+            }
             
-            if(loadingInterval) clearInterval(loadingInterval);
-            loadingInterval = setInterval(() => {
-                let p = (Date.now() - start) / duration;
+            drawLoadingMinimap(mapIndex);
+
+            let duration = 3000 + Math.random() * 2000;
+            let startTimeLoad = Date.now();
+            
+            if(window.loadingInterval) clearInterval(window.loadingInterval);
+            window.loadingInterval = setInterval(() => {
+                let p = (Date.now() - startTimeLoad) / duration;
                 if (p >= 1) {
-                    clearInterval(loadingInterval);
+                    clearInterval(window.loadingInterval);
                     startRaceIntro();
                 }
             }, 50);
@@ -3664,6 +3924,7 @@
                 minY = Math.min(minY, wp.y); maxY = Math.max(maxY, wp.y);
             });
 
+            if (!player) { console.error("Player missing in startRaceIntro"); quitToMenu(); return; }
             panEndX = player.x - canvas.width / 2;
             panEndY = player.y - canvas.height / 2;
 
@@ -3718,7 +3979,17 @@
             finishOrder = [];
             raceEndTime = null;
             spectateTarget = -1;
-            activeWaypoints = mapsData[mapIndex].waypoints;
+            activeWaypoints = [...mapsData[mapIndex].waypoints];
+            // Apply Map Variants (Random chance in GP mode)
+            window.mapVariant = 'NORMAL';
+            if (gameMode === 'GRAND_PRIX' && Math.random() < 0.4) {
+                let variants = ['REVERSE', 'NIGHT'];
+                window.mapVariant = variants[Math.floor(Math.random() * variants.length)];
+                if (window.mapVariant === 'REVERSE') {
+                    activeWaypoints = [...activeWaypoints].reverse();
+                }
+            }
+
             generateScenery(mapIndex);
             
             puddles = [];
@@ -3760,8 +4031,17 @@
             let nx = Math.cos(startDir + Math.PI/2), ny = Math.sin(startDir + Math.PI/2);
             
             let pColor = playerCustomColor || carTypes[selectedCarIndex].color;
+            let pColor2 = playerCustomColor2 || carTypes[selectedCarIndex2].color;
 
             cars = [];
+            
+            if (gameMode === 'LOCAL_MULTIPLAYER') {
+                document.getElementById('speedometer2').classList.remove('hidden');
+                document.getElementById('race-stats2').classList.remove('hidden');
+            } else {
+                document.getElementById('speedometer2').classList.add('hidden');
+                document.getElementById('race-stats2').classList.add('hidden');
+            }
             
             let placeCar = (index, color, isPlayer, name, tier) => {
                 let row = Math.floor(index / 2);
@@ -3811,8 +4091,8 @@
                     quitToMenu();
                     return;
                 }
-                placeCar(0, pColor, true, 'YOU', null);
-                player = cars[0];
+                placeCar(0, pColor, true, playerDisplayName || 'Player 1', carTypes[selectedCarIndex].tier);
+                player = cars[0]; if(gameMode === 'LOCAL_MULTIPLAYER') { player2 = cars[1]; } else { player2 = null; }
                 
                 if (playersUnsubscribe) playersUnsubscribe();
                 const { collection, onSnapshot } = window.firebaseModular;
@@ -3838,13 +4118,13 @@
                     });
                 });
             } else {
-                placeCar(0, pColor, true, 'YOU', null);
+                placeCar(0, pColor, true, playerDisplayName || 'Player 1', carTypes[selectedCarIndex].tier);
 
                 for(let i = 0; i < opponents.length; i++) {
                     let opp = opponents[i];
                     placeCar(i + 1, opp.color, false, opp.name, AI_TIERS[opp.tierIdx]);
                 }
-                player = cars[0];
+                player = cars[0]; if(gameMode === 'LOCAL_MULTIPLAYER') { player2 = cars[1]; } else { player2 = null; }
             }
 
             camera.x = player.x - canvas.width / 2;
@@ -3895,8 +4175,8 @@
             let t = map.theme;
 
             // Background Outer
-            ctx.fillStyle = t.bgOuter;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = (typeof window.mapVariant !== 'undefined' && window.mapVariant === 'NIGHT') ? '#050510' : t.bgOuter;
+            // Background is now handled by viewport renderer or global clear
 
             ctx.save();
             ctx.translate(-(camera.x + cameraShakeX), -(camera.y + cameraShakeY));
@@ -4049,7 +4329,7 @@
 
             // Draw Car Shadows FIRST
             let sortedCars = [...cars].sort((a,b)=>a.y - b.y);
-            coins.forEach(c => c.draw(ctx)); movingHazards.forEach(h => h.draw(ctx)); zoneHazards.forEach(z => z.draw(ctx));
+            coins.forEach(c => c.draw(ctx)); lightningStrikes.forEach(l => l.draw(ctx)); movingHazards.forEach(h => h.draw(ctx)); zoneHazards.forEach(z => z.draw(ctx));
             itemBoxes.forEach(b => b.draw(ctx)); projectiles.forEach(p => p.draw(ctx)); traps.forEach(t => t.draw(ctx));
             sortedCars.forEach(car => car.drawShadow(ctx));
             
@@ -4187,8 +4467,9 @@
                 cars.forEach(car => {
                     if (c.active && !car.isRemote && dist2(car, c) < 900) {
                         c.active = false;
-                        if (car.isPlayer && raceCoins < 10) {
-                            raceCoins++; playerCoins++;
+                        if (car.isPlayer && ((car === player && raceCoins < 10) || (car === player2 && raceCoins2 < 10))) {
+                            if (car === player) { raceCoins++; playerCoins++; }
+                            else { raceCoins2++; playerCoins++; }
                             localStorage.setItem('webRacers_coins', playerCoins);
                             let coinEl = document.getElementById('coin-val');
                             if(coinEl) coinEl.innerText = raceCoins;
@@ -4198,7 +4479,15 @@
                     }
                 });
             });
-            movingHazards.forEach(h => h.update()); zoneHazards.forEach(z => z.update());
+            
+                if (config.weather === 'Storm' && Math.random() < 0.005) {
+                    let wp = activeWaypoints[Math.floor(Math.random() * activeWaypoints.length)];
+                    lightningStrikes.push(new LightningStrike(wp.x + (Math.random()-0.5)*400, wp.y + (Math.random()-0.5)*400));
+                    audio.playThunder();
+                }
+                lightningStrikes.forEach(l => l.update());
+                lightningStrikes = lightningStrikes.filter(l => l.life > 0);
+                movingHazards.forEach(h => h.update()); zoneHazards.forEach(z => z.update());
             itemBoxes.forEach(b => b.update());
             projectiles.forEach(p => p.update());
             projectiles = projectiles.filter(p => p.life > 0);
@@ -4209,8 +4498,12 @@
                 if (car.itemRouletteTimer > 0) {
                     car.itemRouletteTimer--;
                     if (car.itemRouletteTimer <= 0) {
-                        const items = ['Missile', 'Laser', 'Mine', 'Shield'];
-                        car.item = items[Math.floor(Math.random() * items.length)];
+                        let pos = racePositions.indexOf(car) + 1;
+                        let pool = ['Missile', 'Laser', 'Mine', 'Shield'];
+                        if (pos === 1) pool = ['Mine', 'Mine', 'Mine', 'Shield', 'Laser']; 
+                        else if (pos >= 2 && pos <= 4) pool = ['Missile', 'Laser', 'Mine', 'Shield'];
+                        else if (pos > 4) pool = ['Missile', 'Missile', 'Laser', 'Laser', 'Shield'];
+                        car.item = pool[Math.floor(Math.random() * pool.length)];
                         if (car.isPlayer) audio.beep();
                     }
                 }
@@ -4328,12 +4621,12 @@
                 if (playerAdvanced) {
                     msgBox.innerHTML = "<span style='color: var(--neon-green); font-size: 32px;'>🏆 CUP CHAMPION! 🏆</span>";
                     nextBtn.innerText = "Claim Trophy";
-                    nextBtn.onclick = () => { gameState = 'CUP_VICTORY'; showScreen('cup-victory-screen'); audio.victory(); };
+                    nextBtn.setAttribute('data-onclick', 'claimTrophy()');
                     nextBtn.classList.remove('hidden');
                 } else {
                     msgBox.innerHTML = `<span style='color: var(--neon-pink);'>ELIMINATED - FINISHED ${finalPos+1}</span>`;
                     nextBtn.innerText = "Main Menu";
-                    nextBtn.onclick = () => quitToMenu();
+                    nextBtn.setAttribute('data-onclick', 'quitToMenu()');
                     nextBtn.classList.remove('hidden');
                 }
             } else {
@@ -4353,7 +4646,7 @@
                 } else {
                     msgBox.innerHTML = `<span style='color: var(--neon-pink);'>ELIMINATED - FINISHED ${finalPos+1}</span>`;
                     nextBtn.innerText = "Main Menu";
-                    nextBtn.onclick = () => quitToMenu();
+                    nextBtn.setAttribute('data-onclick', 'quitToMenu()');
                     nextBtn.classList.remove('hidden');
                 }
             }
@@ -4408,6 +4701,11 @@
                         Total Time: <strong style="color:var(--neon-green)">${timeVal.textContent}</strong>
                     `;
                 }, 2000);
+            } else if (gameMode === 'GRAND_PRIX') {
+                updateGPStandings();
+                setTimeout(() => {
+                    showGPStandings();
+                }, 2000);
             } else if (gameMode === 'KNOCKOUT_CUP') {
                 let cutoff = 10;
                 if(cupState.round === 2) cutoff = 7;
@@ -4426,6 +4724,7 @@
 
         function gameLoop() {
             if (gameState !== 'PAUSED') {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
                 if (gameState === 'INTRO_PAN') {
                     let p = (Date.now() - introPanStartTime) / introPanDuration;
                     if (p >= 1) {
@@ -4444,21 +4743,27 @@
                         startCountdown();
                     }
                 } else if (player) {
-                    let targetCar = spectateTarget !== -1 ? cars[spectateTarget] : player;
-                    let weightSum = 3, avgX = targetCar.x * 3, avgY = targetCar.y * 3;
-                    cars.forEach(car => {
-                        if (car !== targetCar) {
-                            let d = Math.sqrt(dist2(targetCar, car));
-                            if (d < 800) { avgX += car.x; avgY += car.y; weightSum += 1; }
-                        }
-                    });
-                    let targetCamX = (avgX / weightSum) - canvas.width / 2;
-                    let targetCamY = (avgY / weightSum) - canvas.height / 2;
-                    camera.x += (targetCamX - camera.x) * 0.1;
-                    camera.y += (targetCamY - camera.y) * 0.1;
+                    let targetCar = player;
+                    if (gameMode === 'LOCAL_MULTIPLAYER' && player2) {
+                        // For camera shake logic, just use player 1 as reference
+                        targetCar = player;
+                    } else {
+                        targetCar = spectateTarget !== -1 ? cars[spectateTarget] : player;
+                        let weightSum = 3, avgX = targetCar.x * 3, avgY = targetCar.y * 3;
+                        cars.forEach(car => {
+                            if (car !== targetCar) {
+                                let d = Math.sqrt(dist2(targetCar, car));
+                                if (d < 800) { avgX += car.x; avgY += car.y; weightSum += 1; }
+                            }
+                        });
+                        let targetCamX = (avgX / weightSum) - canvas.width / 2;
+                        let targetCamY = (avgY / weightSum) - canvas.height / 2;
+                        camera.x += (targetCamX - camera.x) * 0.1;
+                        camera.y += (targetCamY - camera.y) * 0.1;
+                    }
                     
                     // --- CAMERA SHAKE SYSTEM ---
-                    if (targetCar.nitroActive) cameraShake = Math.max(cameraShake, 3);
+                    if (targetCar && targetCar.nitroActive) cameraShake = Math.max(cameraShake, 3);
                     if (cameraShake > 0) {
                         cameraShakeX = (Math.random() - 0.5) * cameraShake;
                         cameraShakeY = (Math.random() - 0.5) * cameraShake;
@@ -4485,102 +4790,95 @@
                     }
                 }
 
+                
                 if (gameState !== 'MENU' && gameState !== 'CAR_SELECT' && gameState !== 'RACE_SETUP' && gameState !== 'MAP_SELECT' && gameState !== 'ASSET_LOADING') {
-                    drawTrack();
-                    
-                    // Weather Overlays (Screen Space)
-                    if (gameState === 'PLAYING' || gameState === 'FINISHED' || gameState === 'COUNTDOWN' || gameState === 'INTRO_PAN' || gameState === 'PRE_RACE_SILENCE') {
-                        if (config.weather === 'Storm' || config.weather === 'Hurricane') {
-                            ctx.setTransform(1, 0, 0, 1, 0, 0);
-                            ctx.fillStyle = config.weather === 'Hurricane' ? 'rgba(5, 10, 20, 0.3)' : 'rgba(5, 10, 30, 0.15)';
-                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    const renderScene = (p, viewX, viewY, viewW, viewH) => {
+                        ctx.save();
+                        // 1. Clipping and Viewport Setup
+                        ctx.beginPath();
+                        ctx.rect(viewX, viewY, viewW, viewH);
+                        ctx.clip();
+                        ctx.translate(viewX, viewY);
 
-                            lightningTimer--;
-                            if (lightningTimer <= 0) {
-                                lightningFlash = 0.7;
-                                lightningTimer = Math.random() * 600 + (config.weather === 'Hurricane' ? 200 : 600); 
-                                audio.playThunder();
-                            }
-                            
-                            if (lightningFlash > 0) {
-                                ctx.fillStyle = `rgba(255, 255, 255, ${lightningFlash})`;
-                                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                                lightningFlash -= 0.05; 
-                            }
+                        // 2. Fill Viewport Background
+                        let map = mapsData[currentMapIndex];
+                        if (map) {
+                            ctx.fillStyle = (typeof window.mapVariant !== 'undefined' && window.mapVariant === 'NIGHT') ? '#050510' : map.theme.bgOuter;
+                            ctx.fillRect(0, 0, viewW, viewH);
                         }
 
-                        if (config.weather !== 'Clear') {
-                            ctx.setTransform(1, 0, 0, 1, 0, 0);
-                            if (config.weather === 'Storm') {
-                                ctx.fillStyle = 'rgba(80,100,255,0.12)';
-                            } else if (config.weather === 'Hurricane') {
-                                ctx.fillStyle = 'rgba(50,80,200,0.2)';
-                            } else if (config.weather === 'Snow' || config.weather === 'Blizzard') {
-                                ctx.fillStyle = config.weather === 'Blizzard' ? 'rgba(200,220,255,0.2)' : 'rgba(200,220,255,0.05)';
-                            } else {
-                                ctx.fillStyle = 'rgba(100,140,255,0.06)';
-                            }
-                            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-                            let isSnow = config.weather === 'Snow' || config.weather === 'Blizzard';
-                            let numParticles = 300;
-                            if (config.weather === 'Storm') numParticles = 500;
-                            if (config.weather === 'Hurricane') numParticles = 800;
-                            if (config.weather === 'Blizzard') numParticles = 800;
-                            
-                            let angleRad = 70 * Math.PI / 180;
-                            if (config.weather === 'Hurricane') angleRad = 85 * Math.PI / 180; // almost horizontal
-                            if (isSnow) angleRad = 45 * Math.PI / 180;
-                            if (config.weather === 'Blizzard') angleRad = 80 * Math.PI / 180;
-
-                            let drx = Math.cos(angleRad);
-                            let dry = Math.sin(angleRad);
-                            // Batched weather particle rendering (3 alpha buckets)
-                            ctx.lineCap = 'round';
-                            let baseColor = isSnow ? '255, 255, 255' : '200, 220, 255';
-                            let baseWidth = isSnow ? 3 : 1.75;
-                            let alphas = [0.35, 0.55, 0.75];
-                            let perBucket = Math.ceil(numParticles / 3);
-                            for (let b = 0; b < 3; b++) {
-                                ctx.strokeStyle = `rgba(${baseColor}, ${alphas[b]})`;
-                                ctx.lineWidth = baseWidth + b * 0.3;
-                                ctx.beginPath();
-                                for (let i = 0; i < perBucket; i++) {
-                                    let length = isSnow ? (2 + Math.random() * 3) : (10 + Math.random() * 15);
-                                    if (config.weather === 'Hurricane') length *= 1.5;
-                                    let rx = Math.random() * canvas.width;
-                                    let ry = Math.random() * canvas.height;
-                                    ctx.moveTo(rx, ry);
-                                    ctx.lineTo(rx + drx * length, ry + dry * length);
+                        // 3. Camera Calculation
+                        let camX = 0, camY = 0;
+                        if (gameState === 'INTRO_PAN') {
+                            camX = camera.x; camY = camera.y;
+                        } else if (p) {
+                            let targetCar = p;
+                            let weightSum = 3, avgX = targetCar.x * 3, avgY = targetCar.y * 3;
+                            cars.forEach(car => {
+                                if (car !== targetCar) {
+                                    let d = Math.sqrt(dist2(targetCar, car));
+                                    if (d < 800) { avgX += car.x; avgY += car.y; weightSum += 1; }
                                 }
-                                ctx.stroke();
-                            }
+                            });
+                            camX = (avgX / weightSum) - viewW / 2;
+                            camY = (avgY / weightSum) - viewH / 2;
                         }
+
+                        // 4. Apply Camera Shake
+                        let sx = 0, sy = 0;
+                        if (p && (p.nitroActive || p.miniTurboTimer > 0)) {
+                            let shake = 3;
+                            sx = (Math.random() - 0.5) * shake;
+                            sy = (Math.random() - 0.5) * shake;
+                        }
+
+                        // 5. Draw Track (temporarily override global camera)
+                        let oldCam = {x: camera.x, y: camera.y};
+                        camera.x = camX + sx; camera.y = camY + sy;
+                        
+                        drawTrack();
+                        
+                        camera.x = oldCam.x; camera.y = oldCam.y;
+                        ctx.restore();
+                    };
+
+                    if (gameMode === 'LOCAL_MULTIPLAYER' && player2) {
+                        renderScene(player, 0, 0, canvas.width, canvas.height / 2);
+                        renderScene(player2, 0, canvas.height / 2, canvas.width, canvas.height / 2);
+                        // Draw separator line
+                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
+                        ctx.beginPath(); ctx.moveTo(0, canvas.height / 2); ctx.lineTo(canvas.width, canvas.height / 2); ctx.stroke();
+                    } else {
+                        renderScene(player, 0, 0, canvas.width, canvas.height);
                     }
 
                     if(gameState === 'PLAYING' || gameState === 'FINISHED' || gameState === 'COUNTDOWN') drawMinimap();
                     
-                    if (gameState === 'PLAYING' && player) {
+                    const drawItemHUD = (p, x, y) => {
                         ctx.save(); ctx.setTransform(1,0,0,1,0,0);
-                        let cx = canvas.width - 80, cy = 80;
                         ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
-                        ctx.beginPath(); ctx.roundRect(cx - 40, cy - 40, 80, 80, 10); ctx.fill(); ctx.stroke();
-                        
-                        if (player.itemRouletteTimer > 0) {
+                        ctx.beginPath(); ctx.roundRect(x - 40, y - 40, 80, 80, 10); ctx.fill(); ctx.stroke();
+                        if (p.itemRouletteTimer > 0) {
                             ctx.fillStyle = '#ff00ea'; ctx.font = 'bold 40px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                             let items = ['?', '!', '*', '#'];
-                            ctx.fillText(items[Math.floor(Date.now() / 50) % items.length], cx, cy);
-                        } else if (player.item) {
+                            ctx.fillText(items[Math.floor(Date.now() / 50) % items.length], x, y);
+                        } else if (p.item) {
                             ctx.fillStyle = '#00f3ff'; ctx.font = 'bold 16px Orbitron'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-                            ctx.fillText(player.item, cx, cy);
+                            ctx.fillText(p.item, x, y);
                         }
                         ctx.restore();
+                    };
+
+                    if (gameState === 'PLAYING') {
+                        drawItemHUD(player, canvas.width - 80, 80);
+                        if (gameMode === 'LOCAL_MULTIPLAYER' && player2) {
+                            drawItemHUD(player2, canvas.width - 80, canvas.height / 2 + 80);
+                        }
                     }
                     updateHUD();
 
                     if (gameState === 'FINISHED') {
-                        ctx.save();
-                        ctx.setTransform(1, 0, 0, 1, 0, 0);
+                        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
                         ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
                         ctx.fillStyle = '#fbc531'; ctx.font = '900 80px "Orbitron"';
                         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -4597,29 +4895,8 @@
         generateCarSelection();
         generateMapThumbnails();
         
-        // Setup initial interactive asset load button
-        document.getElementById('start-loading-btn').addEventListener('click', async () => {
-            document.getElementById('start-loading-btn').style.display = 'none';
-            document.getElementById('loading-status-text').style.display = 'block';
-            document.getElementById('asset-bottom-bar').style.display = 'flex';
-            
-            await Tone.start(); 
-            audio.init();
-            audio.startMusic('loading');
-
-            const fill = document.getElementById('asset-bar-fill');
-            const text = document.getElementById('asset-bottom-text');
-            
-            audio.loadAssets((progressText, percent) => {
-                text.innerText = progressText;
-                fill.style.width = percent + '%';
-            }, () => {
-                document.getElementById('asset-loading-screen').classList.add('hidden');
-                showScreen('main-menu');
-                generateSpeedLines();
-                audio.startMusic('menu');
-            });
-        });
+        
+requestAnimationFrame(gameLoop);
 
         // Add Chrome Extension CSP workaround for inline onclicks
         document.addEventListener('click', (e) => {
@@ -4634,7 +4911,7 @@
                 let args = rawArgs.map(arg => {
                     if (!arg) return undefined;
                     if (arg === 'this') return btn;
-                    if (arg === 'currentMapIndex') return currentMapIndex;
+                    if (arg === 'currentMapIndex') return typeof currentMapIndex !== 'undefined' ? currentMapIndex : 0;
                     if (arg.startsWith("'") && arg.endsWith("'")) return arg.slice(1, -1);
                     if (!isNaN(arg) && arg !== '') return Number(arg);
                     return arg;
@@ -4655,5 +4932,12 @@
             }
         });
 
-        requestAnimationFrame(gameLoop);
-
+        // Add Change listener for color picker
+        document.addEventListener('change', (e) => {
+            let el = e.target.closest('[data-onchange]');
+            if (!el) return;
+            let changeStr = el.getAttribute('data-onchange');
+            if (changeStr === 'updateCustomColor(this.value)') {
+                if (typeof updateCustomColor === 'function') updateCustomColor(el.value);
+            }
+        });
