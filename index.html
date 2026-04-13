@@ -1602,12 +1602,26 @@
                     this.engineOsc = new Tone.Oscillator(40, "sawtooth").start();
                     this.engineFilter = new Tone.Filter(200, "lowpass").toDestination();
                     this.engineOsc.connect(this.engineFilter);
-                    this.engineOsc.volume.value = -Infinity; // Start muted
-                    
+                    this.engineOsc.volume.value = -Infinity;
+
+                    // Second oscillator for harmonic richness per vehicle type
+                    this.engineOsc2 = new Tone.Oscillator(60, "triangle").start();
+                    this.engineOsc2.connect(this.engineFilter);
+                    this.engineOsc2.volume.value = -Infinity;
+
                     this.screechNoise = new Tone.Noise("pink").start();
                     this.screechFilter = new Tone.Filter(1000, "highpass").toDestination();
                     this.screechNoise.connect(this.screechFilter);
                     this.screechNoise.volume.value = -Infinity;
+
+                    // Engine sound profiles per car type
+                    this.engineProfiles = {
+                        SPEEDSTER:   { wave: 'sawtooth', baseFreq: 55, freqMult: 8, filterBase: 300, filterMult: 70, vol: -8,  wave2: 'square',   freq2Ratio: 1.5, vol2: -18 },
+                        'GRIP KING': { wave: 'triangle', baseFreq: 45, freqMult: 6, filterBase: 250, filterMult: 55, vol: -10, wave2: 'sine',     freq2Ratio: 2.0, vol2: -16 },
+                        BALANCED:    { wave: 'sawtooth', baseFreq: 40, freqMult: 5, filterBase: 200, filterMult: 50, vol: -10, wave2: 'triangle',  freq2Ratio: 1.5, vol2: -20 },
+                        TANK:        { wave: 'square',   baseFreq: 28, freqMult: 3, filterBase: 150, filterMult: 40, vol: -6,  wave2: 'sawtooth',  freq2Ratio: 0.5, vol2: -14 }
+                    };
+                    this.activeEngineProfile = this.engineProfiles.BALANCED;
                 }
             },
 
@@ -1828,16 +1842,28 @@
                 }
             },
 
+            setEngineProfile(carTypeName) {
+                if (!this.engineProfiles) return;
+                let p = this.engineProfiles[carTypeName] || this.engineProfiles.BALANCED;
+                this.activeEngineProfile = p;
+                if (this.engineOsc) this.engineOsc.type = p.wave;
+                if (this.engineOsc2) this.engineOsc2.type = p.wave2;
+            },
             updateEngine(speed, isPlaying) {
                 if (!this.isInit || this.muted || !this.engineOsc) return;
+                let p = this.activeEngineProfile || { baseFreq: 40, freqMult: 5, filterBase: 200, filterMult: 50, vol: -10, freq2Ratio: 1.5, vol2: -20 };
                 if (!isPlaying) {
                     this.engineOsc.volume.rampTo(-Infinity, 0.1);
+                    if (this.engineOsc2) this.engineOsc2.volume.rampTo(-Infinity, 0.1);
                     return;
                 }
-                this.engineOsc.volume.rampTo(-10, 0.1);
+                this.engineOsc.volume.rampTo(p.vol, 0.1);
+                if (this.engineOsc2) this.engineOsc2.volume.rampTo(p.vol2, 0.1);
                 const absSpeed = Math.abs(speed);
-                this.engineOsc.frequency.rampTo(40 + (absSpeed * 5), 0.1);
-                this.engineFilter.frequency.rampTo(200 + (absSpeed * 50), 0.1);
+                let freq = p.baseFreq + (absSpeed * p.freqMult);
+                this.engineOsc.frequency.rampTo(freq, 0.1);
+                if (this.engineOsc2) this.engineOsc2.frequency.rampTo(freq * p.freq2Ratio, 0.1);
+                this.engineFilter.frequency.rampTo(p.filterBase + (absSpeed * p.filterMult), 0.1);
             },
             setScreech(active) {
                 if (!this.isInit || this.muted || !this.screechNoise) return;
@@ -1894,7 +1920,102 @@
                 if (!this.isInit || this.muted) return;
                 this.synths.cymbal.triggerAttackRelease("2n", time, 0.6);
             },
-            
+
+            // --- WEAPON & ITEM SOUND EFFECTS ---
+            playLaserShot() {
+                if (!this.isInit || this.muted) return;
+                let t = Tone.now();
+                let osc = new Tone.Oscillator({ type: 'square', frequency: 1800 }).toDestination();
+                osc.volume.value = -14;
+                osc.frequency.setValueAtTime(1800, t);
+                osc.frequency.exponentialRampToValueAtTime(300, t + 0.12);
+                osc.start(t).stop(t + 0.12);
+                let osc2 = new Tone.Oscillator({ type: 'sawtooth', frequency: 2400 }).toDestination();
+                osc2.volume.value = -20;
+                osc2.frequency.setValueAtTime(2400, t);
+                osc2.frequency.exponentialRampToValueAtTime(600, t + 0.08);
+                osc2.start(t).stop(t + 0.08);
+                setTimeout(() => { osc.dispose(); osc2.dispose(); }, 600);
+            },
+            playMissileLaunch() {
+                if (!this.isInit || this.muted) return;
+                let t = Tone.now();
+                let filter = new Tone.Filter({ type: 'bandpass', frequency: 400 }).toDestination();
+                filter.frequency.setValueAtTime(400, t);
+                filter.frequency.exponentialRampToValueAtTime(2000, t + 0.25);
+                let noise = new Tone.Noise('white');
+                noise.volume.value = -16;
+                noise.connect(filter);
+                noise.start(t).stop(t + 0.35);
+                let osc = new Tone.Oscillator({ type: 'sawtooth', frequency: 80 }).toDestination();
+                osc.volume.value = -12;
+                osc.frequency.setValueAtTime(80, t);
+                osc.frequency.exponentialRampToValueAtTime(300, t + 0.3);
+                osc.start(t).stop(t + 0.3);
+                setTimeout(() => { osc.dispose(); noise.dispose(); filter.dispose(); }, 800);
+            },
+            playMineDrop() {
+                if (!this.isInit || this.muted) return;
+                let t = Tone.now();
+                let osc = new Tone.Oscillator({ type: 'sine', frequency: 120 }).toDestination();
+                osc.volume.value = -10;
+                osc.frequency.setValueAtTime(120, t);
+                osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+                osc.start(t).stop(t + 0.15);
+                let click = new Tone.Noise('white').toDestination();
+                click.volume.value = -18;
+                click.start(t).stop(t + 0.03);
+                setTimeout(() => { osc.dispose(); click.dispose(); }, 500);
+            },
+            playExplosion() {
+                if (!this.isInit || this.muted) return;
+                let t = Tone.now();
+                let filter = new Tone.Filter({ type: 'lowpass', frequency: 2000 }).toDestination();
+                filter.frequency.setValueAtTime(2000, t);
+                filter.frequency.exponentialRampToValueAtTime(80, t + 0.4);
+                let noise = new Tone.Noise('brown');
+                noise.volume.value = -8;
+                noise.connect(filter);
+                noise.start(t).stop(t + 0.4);
+                let boom = new Tone.Oscillator({ type: 'sine', frequency: 60 }).toDestination();
+                boom.volume.value = -6;
+                boom.frequency.setValueAtTime(60, t);
+                boom.frequency.exponentialRampToValueAtTime(20, t + 0.3);
+                boom.start(t).stop(t + 0.3);
+                setTimeout(() => { noise.dispose(); filter.dispose(); boom.dispose(); }, 900);
+            },
+            playShieldUp() {
+                if (!this.isInit || this.muted) return;
+                let t = Tone.now();
+                this.playSynth('trumpet', 72, t, 0.15, 0.3);
+                this.playSynth('trumpet', 76, t + 0.08, 0.15, 0.3);
+                this.playSynth('trumpet', 79, t + 0.16, 0.15, 0.3);
+                this.playSynth('trumpet', 84, t + 0.24, 0.3, 0.35);
+            },
+            playShieldBreak() {
+                if (!this.isInit || this.muted) return;
+                let t = Tone.now();
+                let noise = new Tone.Noise('white').toDestination();
+                noise.volume.value = -14;
+                noise.start(t).stop(t + 0.15);
+                this.playSynth('synthBass', 50, t, 0.2, 0.4);
+                this.playSynth('synthBass', 45, t + 0.08, 0.15, 0.3);
+                setTimeout(() => { noise.dispose(); }, 500);
+            },
+            playNitroBoost() {
+                if (!this.isInit || this.muted) return;
+                let t = Tone.now();
+                let osc = new Tone.Oscillator({ type: 'sawtooth', frequency: 200 }).toDestination();
+                osc.volume.value = -16;
+                osc.frequency.setValueAtTime(200, t);
+                osc.frequency.exponentialRampToValueAtTime(800, t + 0.2);
+                osc.start(t).stop(t + 0.25);
+                let noise = new Tone.Noise('pink').toDestination();
+                noise.volume.value = -18;
+                noise.start(t).stop(t + 0.3);
+                setTimeout(() => { osc.dispose(); noise.dispose(); }, 700);
+            },
+
             startRain(intensity) {
                 if (!this.isInit || this.muted) return;
                 if (!this.rainAudioElement) {
@@ -2892,11 +3013,11 @@
                 cars.forEach(c => {
                     if (c !== this.owner && dist2(this, c) < 2500) {
                         this.life = 0;
-                        if (c.shieldTimer > 0) { c.shieldTimer = 0; if(c.isPlayer) audio.playSynth('synthBass', 40, 0, 0.2, 0.5); }
+                        if (c.shieldTimer > 0) { c.shieldTimer = 0; if(c.isPlayer) audio.playShieldBreak(); }
                         else {
                             c.spinTimer = 45; c.speed *= 0.3;
                             if (c.isPlayer) cameraShake = Math.max(cameraShake, 10);
-                            if (c.isPlayer || this.owner.isPlayer) audio.playSynth('orchestraHit', 48, 0, 1, 0.5);
+                            if (c.isPlayer || this.owner.isPlayer) audio.playExplosion();
                         }
                     }
                 });
@@ -2926,11 +3047,11 @@
                         if (dist2(this, c) < 2500) {
                             this.life = 0;
                             fx.addParticle(this.x, this.y, 0, 0, 30, '#ffaa00', 20, false);
-                            if (c.shieldTimer > 0) { c.shieldTimer = 0; if(c.isPlayer) audio.playSynth('synthBass', 40, 0, 0.2, 0.5); }
+                            if (c.shieldTimer > 0) { c.shieldTimer = 0; if(c.isPlayer) audio.playShieldBreak(); }
                             else {
                                 c.spinTimer = 60; c.speed *= 0.3;
                                 if (c.isPlayer) cameraShake = Math.max(cameraShake, 15);
-                                if (c.isPlayer || this.owner.isPlayer) audio.playSynth('orchestraHit', 40, 0, 1.5, 0.6);
+                                if (c.isPlayer || this.owner.isPlayer) audio.playExplosion();
                             }
                         }
                     });
@@ -3104,6 +3225,7 @@
                         }
 
                         if (wantsNitro && this.nitro > 0 && !this.nitroLocked && !this.isOffRoad) {
+                            if (!this.nitroActive && this.isPlayer) audio.playNitroBoost();
                             this.nitroActive = true;
                             this.nitro -= 20 / config.fps;
                             if (this.nitro <= 0) {
@@ -3449,10 +3571,16 @@
 
             
             useItem() {
-                if (this.item === 'Missile') projectiles.push(new Projectile(this.x, this.y, this.angle, 'Missile', this));
-                else if (this.item === 'Laser') projectiles.push(new Projectile(this.x, this.y, this.angle, 'Laser', this));
-                else if (this.item === 'Mine') traps.push(new Trap(this.x, this.y, 'Mine', this));
-                else if (this.item === 'Shield') { this.shieldTimer = 300; if(this.isPlayer) audio.playSynth('trumpet', 72, Tone.now(), 0.5, 0.4); }
+                // Play SFX for player always, or for AI within ~800px of player
+                let playSound = this.isPlayer;
+                if (!playSound && player) {
+                    let dx = this.x - player.x, dy = this.y - player.y;
+                    playSound = (dx*dx + dy*dy) < 640000;
+                }
+                if (this.item === 'Missile') { projectiles.push(new Projectile(this.x, this.y, this.angle, 'Missile', this)); if(playSound) audio.playMissileLaunch(); }
+                else if (this.item === 'Laser') { projectiles.push(new Projectile(this.x, this.y, this.angle, 'Laser', this)); if(playSound) audio.playLaserShot(); }
+                else if (this.item === 'Mine') { traps.push(new Trap(this.x, this.y, 'Mine', this)); if(playSound) audio.playMineDrop(); }
+                else if (this.item === 'Shield') { this.shieldTimer = 300; if(this.isPlayer) audio.playShieldUp(); }
                 this.item = null;
             }
             handleAI() {
@@ -4588,7 +4716,8 @@
             
             audio.fadeOutMusic(1); // Cross-fade menu music
             
-            // Simulates cars idling
+            // Set engine sound to match selected car type, then idle
+            audio.setEngineProfile(carTypes[selectedCarIndex].name);
             audio.updateEngine(0, true); 
         }
 
